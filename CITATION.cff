@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+title: "Reproducing EM-LLM: Human-inspired Episodic Memory for Infinite Context LLMs"
+message: "If you use this reproduction, please cite both the original EM-LLM paper and this reproduction study."
+type: software
+authors:
+  - family-names: "Morán"
+    given-names: "Juan Pablo"
+    email: juanpablomorandec@gmail.com
+repository-code: "https://github.com/jpm0112/repro-track"
+abstract: >-
+  Reproduction study for the MLRC 2026 / NeurIPS 2026 Reproducibility Track of
+  Fountas et al. (ICLR 2025), "Human-inspired Episodic Memory for Infinite
+  Context LLMs". Upstream code is vendored under em-llm-model/ at a pinned
+  commit and is not modified.
+references:
+  - type: article
+    title: "Human-inspired Episodic Memory for Infinite Context LLMs"
+    authors:
+      - family-names: "Fountas"
+        given-names: "Zafeirios"
+      - family-names: "Benfeghoul"
+        given-names: "Martin"
+      - family-names: "Oomerjee"
+        given-names: "Adnan"
+      - family-names: "Christopoulou"
+        given-names: "Fenia"
+      - family-names: "Lampouras"
+        given-names: "Gerasimos"
+      - family-names: "Bou Ammar"
+        given-names: "Haitham"
+      - family-names: "Wang"
+        given-names: "Jun"
+    year: 2025
+    conference:
+      name: "International Conference on Learning Representations (ICLR)"
+    url: "https://openreview.net/forum?id=BI2int5SAC"

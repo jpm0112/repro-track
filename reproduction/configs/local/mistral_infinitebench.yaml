@@ -1,0 +1,18 @@
+# Reference OmegaConf overrides for local-backend Mistral × ∞-Bench.
+#
+# Required because the local box has only 32 GB RAM, while upstream's default
+# `min_free_cpu_memory: 100` (GB) would OOM as soon as a sequence exceeds
+# `disk_offload_threshold: 300000` and triggers CPU-cache allocation
+# (em-llm-model/em_llm/attention/context_manager.py:425).
+#
+# Lower the watermark and the threshold so disk offload kicks in earlier,
+# bypassing the unsatisfiable CPU-cache request.
+#
+# Apply via the EXTRA_OVERRIDES env var:
+#   EXTRA_OVERRIDES="model.min_free_cpu_memory=8 model.disk_offload_threshold=200000" \
+#     bash reproduction/scripts/shell/03_run_infinitebench.sh
+
+model:
+  min_free_cpu_memory: 8           # GB to keep free; upstream default 100
+  disk_offload_threshold: 200000   # tokens; upstream default 300000
+  vector_offload_threshold: 30000  # offload representative-token tensor sooner

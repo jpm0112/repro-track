@@ -1,0 +1,3 @@
+[submodule "em-llm-model"]
+	path = em-llm-model
+	url = https://github.com/em-llm/EM-LLM-model

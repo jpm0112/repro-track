@@ -1,0 +1,31 @@
+# Pip-only fallback equivalent to the conda env files. Use this if you don't
+# have conda available (e.g. inside an Apptainer container or a vanilla venv).
+#
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements.txt
+#   pip install -r em-llm-model/requirements.txt
+#   pip install -e em-llm-model/
+#
+# Pins are the upper bounds of upstream's requirements.txt so the resolver
+# converges to a single deterministic point.
+
+# Torch is intentionally NOT pinned here — install it before this file with the
+# correct CUDA build, e.g.:
+#   pip install torch==2.3.* --index-url https://download.pytorch.org/whl/cu121
+# That keeps requirements.txt portable across CUDA versions on local vs ASAX.
+
+transformers==4.41.0
+datasets==2.21.0
+accelerate>=0.29
+omegaconf>=2.3
+fschat>=0.2.35
+rouge==1.0.1
+fuzzywuzzy==0.18.0
+jieba==0.42.1
+spacy>=3.7,<3.8
+evaluate
+rouge_score
+psutil
+huggingface_hub>=0.23
+tqdm
+python-Levenshtein

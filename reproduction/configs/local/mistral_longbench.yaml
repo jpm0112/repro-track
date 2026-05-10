@@ -1,0 +1,16 @@
+# Reference OmegaConf overrides for local-backend Mistral × LongBench.
+#
+# Apply at runtime by piping each leaf into the wrapper's EXTRA_OVERRIDES:
+#   EXTRA_OVERRIDES="$(yq -r 'paths(scalars) as $p | "\($p|join(\".\"))=\(getpath($p))"' reproduction/configs/local/mistral_longbench.yaml | tr '\n' ' ')" \
+#     bash reproduction/scripts/shell/02_run_longbench.sh
+#
+# For LongBench on a 24 GB / 32 GB box no overrides are strictly needed —
+# upstream defaults work. This file documents that decision and serves as a
+# template for tighter configs.
+#
+# Upstream YAML lives at em-llm-model/config/mistral.yaml and is NOT modified.
+
+model:
+  # No overrides needed. CPU-offload path is not triggered for LongBench's
+  # max context length (~200K) so min_free_cpu_memory=100 is harmless.
+  {}

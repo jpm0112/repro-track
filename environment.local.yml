@@ -1,0 +1,42 @@
+# Conda environment for the LOCAL backend (Windows / WSL2 + RTX 3090).
+#
+# Use:
+#   conda env create -f environment.local.yml
+#   conda activate emllm
+#   bash reproduction/scripts/shell/00_env_setup.sh   # installs upstream em_llm pkg
+#
+# This file pins the *outer* environment. Upstream em-llm-model has its own
+# requirements.txt with looser pins; that file is installed by 00_env_setup.sh
+# *into* this env and resolves against the same pins below.
+
+name: emllm
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  # PyTorch with CUDA 12.1 — matches RTX 3090 + driver 591.86. Conda installs
+  # the toolkit alongside torch to keep CPU/GPU plumbing self-contained.
+  - pytorch=2.3.*
+  - torchvision=0.18.*
+  - torchaudio=2.3.*
+  - pytorch-cuda=12.1
+  # Pinned to upper bounds of upstream's requirements.txt for reproducibility.
+  - pip:
+      - transformers==4.41.0
+      - datasets==2.21.0
+      - accelerate>=0.29
+      - omegaconf>=2.3
+      - fschat>=0.2.35
+      - rouge==1.0.1
+      - fuzzywuzzy==0.18.0
+      - jieba==0.42.1
+      - spacy>=3.7,<3.8
+      - evaluate
+      - rouge_score
+      - psutil
+      - huggingface_hub>=0.23
+      - tqdm
+      - python-Levenshtein  # speeds up fuzzywuzzy

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Conda / venv
+.conda/
+.venv/
+env/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Reproduction artifacts (large, regenerable)
+reproduction/results/**/logs/
+reproduction/results/**/*.jsonl
+reproduction/results/**/offload_data/
+
+# HuggingFace cache (if accidentally written under repo root)
+.cache/
+
+# Upstream-generated outputs that may end up under em-llm-model/ if the upstream
+# scripts are run from inside its tree. We don't ignore them here because we
+# never want to mask actual upstream files; the no-edit invariant is enforced by
+# `git diff em-llm-model/` being empty, and the wrappers in reproduction/ direct
+# outputs to reproduction/results/ instead.
+em-llm-model/benchmark/data/
+em-llm-model/benchmark/results/
+em-llm-model/offload_data/
+
+# Manuscript build artefacts
+manuscript/**/*.aux
+manuscript/**/*.log
+manuscript/**/*.out
+manuscript/**/*.bbl
+manuscript/**/*.blg
+manuscript/**/*.synctex.gz
+manuscript/**/build/
+
+# Local overrides
+.env.local
+*.local.env

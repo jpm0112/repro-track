@@ -1,0 +1,40 @@
+# Conda environment for the ASAX backend (Alabama Supercomputer).
+#
+# Use (from a login node, after `source reproduction/scripts/env/asax.env`):
+#   conda env create -f environment.asax.yml -p $SCRATCH/conda-envs/emllm
+#   conda activate $SCRATCH/conda-envs/emllm
+#   bash reproduction/scripts/shell/00_env_setup.sh
+#
+# Differs from environment.local.yml only in the CUDA toolkit version, which
+# must match whichever cuda module is loaded by reproduction/scripts/env/asax.env.
+# Verify with `module avail cuda` and adjust pytorch-cuda below if needed.
+
+name: emllm
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  # CUDA 12.4 — adjust to match the cuda/* module loaded on ASAX.
+  - pytorch=2.4.*
+  - torchvision=0.19.*
+  - torchaudio=2.4.*
+  - pytorch-cuda=12.4
+  - pip:
+      - transformers==4.41.0
+      - datasets==2.21.0
+      - accelerate>=0.29
+      - omegaconf>=2.3
+      - fschat>=0.2.35
+      - rouge==1.0.1
+      - fuzzywuzzy==0.18.0
+      - jieba==0.42.1
+      - spacy>=3.7,<3.8
+      - evaluate
+      - rouge_score
+      - psutil
+      - huggingface_hub>=0.23
+      - tqdm
+      - python-Levenshtein

@@ -1,0 +1,8 @@
+# Reference OmegaConf overrides for ASAX Mistral × LongBench.
+#
+# ASAX A100 nodes have plenty of GPU and host RAM, so upstream defaults work
+# unmodified. This file is intentionally a no-op marker — its presence
+# documents that the ASAX LongBench reproduction uses paper-default settings,
+# which is the highest-fidelity configuration possible.
+
+model: {}
