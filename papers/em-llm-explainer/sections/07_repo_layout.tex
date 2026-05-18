@@ -1,0 +1,101 @@
+\section{Repository layout}
+\label{sec:repo-layout}
+
+This chapter is the map. It is meant to be read once before opening any code file, and referred back to whenever a path comes up in later chapters. Everything in Part~II of this document is a deeper look at one of the directories described here.
+
+\subsection{Top-level tree}
+\label{sec:repo-tree}
+
+\begin{lstlisting}[style=shellstyle,basicstyle=\ttfamily\footnotesize]
+repro-track/
+  em-llm-model/        upstream EM-LLM, pinned at edb2e4a, never modified
+  infllm-model/        upstream InfLLM, pinned, the paper's main baseline
+  papers/              reference PDFs, candidate list, this companion
+  reproduction/        the actual reproduction work
+    configs/
+      local/           OmegaConf overrides for RTX 3090 + WSL2
+      asax/            OmegaConf overrides for the ASAX cluster
+    scripts/
+      env/             system env files: local.env, asax.env
+      shell/           numbered, system-agnostic wrappers (00-07)
+      asax/            ASAX-only run_script payloads
+    results/
+      local/           raw outputs from RTX 3090 runs
+      asax/            raw outputs from ASAX runs
+    analysis/          paper_baselines, make_summary, cross-system notebooks
+  extensions/          ablations and added baselines (TMLR Repro Cert)
+  docs/                reproduction notes and platform-specific gotchas
+  manuscript/          TMLR and ReScience C LaTeX sources
+\end{lstlisting}
+
+The first thing to internalise is the split between code we modify and code we do not. The directories \file{em-llm-model/} and \file{infllm-model/} are vendored copies of upstream repositories at specific commits, recorded in \file{docs/upstream\_commit.md} and \file{docs/infllm\_commit.md}. They are not modified. The reproduction's invariant is that \texttt{git diff em-llm-model/} returns nothing.
+
+Everything reproduction-specific lives outside those two directories. The wrapper scripts in \file{reproduction/scripts/shell/} call into \file{em-llm-model/benchmark/pred.py} (and the analogous InfLLM entry point) with overrides supplied at the command line via OmegaConf. The configs in \file{reproduction/configs/} are sparse and only override the fields that need adjusting per backend; the rest is inherited from the upstream YAML templates.
+
+\subsection{Vendored upstream: \file{em-llm-model/}}
+\label{sec:vendored}
+
+The upstream code under \file{em-llm-model/} has two layers. The first is \file{em\_llm/}, the algorithm itself: attention wrappers, the context manager, the similarity-refinement utilities, RoPE handling, and the Hugging Face patch (\cref{sec:walkthrough}). The second is \file{benchmark/}, the evaluation harness that loads a base LLM, patches it with EM-LLM's forward methods, and runs the LongBench and $\infty$-Bench tasks (\cref{sec:benchmark}).
+
+The InfLLM baseline lives in a sibling directory \file{infllm-model/}, also vendored at a pinned commit. It is structured similarly enough that the reproduction's shell wrappers can target it with parallel scripts (the \texttt{06\_} and \texttt{07\_} entries in \file{reproduction/scripts/shell/}).
+
+\subsection{Reproduction wrappers and configs}
+\label{sec:wrappers-configs}
+
+The wrapper scripts under \file{reproduction/scripts/shell/} are numbered so they can be read top to bottom as a pipeline. \cref{tab:shell-wrappers} lists them in order.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{5.2cm}>{\raggedright\arraybackslash}p{8.5cm}}
+  \toprule
+  Script & Role \\
+  \midrule
+  \texttt{\seqsplit{00\_env\_setup.sh}} & Verify CUDA, install the spaCy model, confirm the conda env activates cleanly. \\
+  \texttt{\seqsplit{00b\_login\_node\_prep.sh}} & ASAX-only prep that runs on the login node before any compute job. \\
+  \texttt{\seqsplit{01\_download\_data.sh}} & Fetch LongBench, $\infty$-Bench, and the passkey data via \file{em-llm-model/benchmark/download.py}. \\
+  \texttt{\seqsplit{02\_run\_longbench.sh}} & Run EM-LLM on LongBench. \\
+  \texttt{\seqsplit{03\_run\_infinitebench.sh}} & Run EM-LLM on $\infty$-Bench. \\
+  \texttt{\seqsplit{04\_run\_passkey\_extended.sh}} & Run the extended-passkey experiment. \\
+  \texttt{\seqsplit{05\_score.sh}} & Aggregate raw outputs into per-task summaries. \\
+  \texttt{\seqsplit{06\_run\_infllm\_longbench.sh}} & InfLLM baseline on LongBench. \\
+  \texttt{\seqsplit{07\_run\_infllm\_infinitebench.sh}} & InfLLM baseline on $\infty$-Bench. \\
+  \bottomrule
+\end{tabular}
+\caption{Shell wrappers in \file{reproduction/scripts/shell/}, in pipeline order.}
+\label{tab:shell-wrappers}
+\end{table}
+
+Two shell helpers, \file{\_infllm\_budgets.sh} and \file{\_paper\_variants.sh}, hold the budget-and-variant tables used by the numbered scripts. The underscore prefix is the conventional signal that they are sourced libraries rather than user-facing entry points.
+
+The configs under \file{reproduction/configs/local/} and \file{reproduction/configs/asax/} are intentionally minimal. Each holds only the fields that differ from the upstream YAML defaults: memory thresholds, offload paths, world size, and so on. The OmegaConf override pattern means the upstream config is the source of truth and the reproduction config is a diff. This makes it cheap to audit what we changed without diffing against upstream by hand.
+
+The ASAX-specific payloads under \file{reproduction/scripts/asax/} are the scripts that get submitted to ASA's \texttt{run\_script} wrapper. They share a common preamble (\file{\_asax\_job\_setup.sh}) that sets up modules, conda, and the right PATH ordering. Each per-benchmark script then sources that preamble and calls the corresponding shell wrapper. There are EM-LLM and InfLLM variants of each.
+
+\subsection{Outputs and analysis}
+\label{sec:outputs}
+
+Results land under \file{reproduction/results/<system>/<benchmark>/<model>\_<variant>/} for EM-LLM runs, with a parallel \file{<benchmark>\_infllm/<model>\_<budget>/} layout for InfLLM. Each directory contains a \file{result.json} from the underlying \file{pred.py} call and one or more summary files produced by \file{05\_score.sh}.
+
+The analysis directory at \file{reproduction/analysis/} holds the small scripts that turn raw outputs into the comparison tables and figures used in the eventual manuscript. \file{paper\_baselines.py} encodes the paper's published numbers; \file{make\_summary.py} reduces a run directory to a one-row entry; the notebooks combine these into the cross-system tables.
+
+\subsection{The audit trail in \file{docs/}}
+\label{sec:audit-trail}
+
+The documentation directory holds the platform-specific knowledge that does not belong in code:
+\begin{itemize}
+  \item \file{upstream\_commit.md} and \file{infllm\_commit.md} pin the two vendored repos.
+  \item \file{reproduction\_notes.md} is an append-only decision log.
+  \item \file{differences\_from\_paper.md} is where any divergence between our numbers and the paper's gets recorded.
+  \item \file{hardware\_adaptations.md} lists the offload-threshold overrides per hardware target.
+  \item \file{asax\_setup.md} and \file{asax\_lessons\_learned.md} capture the cluster-specific quirks that took time to figure out.
+  \item \file{infllm\_setup.md} explains how to populate the InfLLM submodule and verify its commit.
+  \item \file{paper\_reproduction\_runbook.md} is the single command-by-command runbook for the full 20-run matrix.
+\end{itemize}
+
+These files are the difference between a reproducible project and a one-shot run. When a result looks off, the first place to look is \file{differences\_from\_paper.md}, then \file{reproduction\_notes.md}, then \file{hardware\_adaptations.md}.
+
+\subsection{What lives outside this companion}
+\label{sec:companion-scope}
+
+The reproduction's manuscript draft (\file{manuscript/}) and the extension experiments (\file{extensions/}) are deliberately out of scope for this document. They exist for the reproducibility certification track and are not needed to understand either the paper or the wrapped code. They will be referenced from the manuscript itself when the reproduction is written up.
