@@ -1,0 +1,52 @@
+\section{Limitations and open questions}
+\label{sec:limitations}
+
+This chapter pulls together the limitations the paper itself acknowledges, the future directions it points to, and the questions a reproducer should keep in mind as they run the experiments in this repository. The reproduction's own answers to these questions, when they come, belong in \file{docs/differences\_from\_paper.md} rather than in this companion.
+
+\subsection{Acknowledged limitations}
+
+\paragraph{The clustering metric is not universal.}
+The paper uses modularity and conductance, and reports modularity as the better default. It does not claim either metric is optimal across all networks or all tasks. \textcite{fortunato2010community} and the broader community-detection literature show that the relative performance of community metrics depends on the underlying graph structure, and the paper points to this explicitly in Section~5. A reproducer who finds modularity underperforms on a particular task should not assume the implementation is broken; it could be a domain mismatch the paper does not cover.
+
+\paragraph{Hyperparameter sensitivity is only lightly explored.}
+The paper sweeps $\gamma$ at six values, the contiguity ratio $k_r$ at three, and the refinement metric at two. The chunk size $m$, the trailing window length $\tau$, the neighbour radius $n$, and the offload thresholds are mostly held at implementation defaults. The combined space is small enough that nothing obvious is missing, but it also means a thorough reproducer has room to find sensitivities the original work did not expose.
+
+\paragraph{Task-dependent component value.}
+Section~4.4 of the paper observes that refinement improves 60\% of tasks and contiguity 44\%, but the best variant for a given task is not always SM+C. Some tasks favour S alone, some SM, some SC, some S+C. The paper does not propose a model for predicting which variant wins on which task; choosing per-task is left to the practitioner.
+
+\paragraph{Memory overhead at 1M-plus tokens.}
+The paper reports the 10M-token passkey result without dwelling on the engineering cost. In practice, holding 10M tokens of KV pairs plus event representatives is well past GPU memory on commodity hardware, and the implementation relies on CPU and disk offload via \texttt{min\_free\_cpu\_memory}, \texttt{disk\_offload\_threshold}, and \texttt{vector\_offload\_threshold} (\cref{sec:hparams}). Those knobs are not paper hyperparameters; they are an artefact of running long sequences on real machines. This reproduction handles them through \file{docs/hardware\_adaptations.md} and the configs under \file{reproduction/configs/}.
+
+\paragraph{Batch size one.}
+The released implementation supports batch size 1 only. This is asserted as a hard constraint in \file{em\_llm/attention/context\_manager.py} and is not lifted by any configuration flag in the current codebase. A reproducer who wants to evaluate the wrapper at higher throughput is forced into multiple processes rather than larger batches.
+
+\subsection{Author-stated future directions}
+
+\paragraph{Per-layer segmentation.}
+EM-LLM currently segments tokens once, into one canonical set of events, and then retrieves from that set at every layer. The paper proposes (Section~5) extending segmentation to operate independently at each transformer layer, producing a hierarchical event structure. This would parallel the multi-scale event hierarchy observed in human cortex \cite{baldassano2017discovering} and the per-layer roles already observed in induction heads.
+
+\paragraph{Imagination and future thinking.}
+The authors point to model-based reinforcement learning and continual learning as natural beneficiaries of an episodic memory built on top of an LLM. The argument is that an LLM with explicit access to its own event history can simulate variants of past episodes, in effect imagining alternative futures, and that this kind of replay has been productive in the cognitive-science literature on memory \cite{spens2024construction}.
+
+\paragraph{Advanced clustering and change-point detection.}
+The surprise-based boundary rule in EM-LLM has a close formal relative in Bayesian online change-point detection \cite{adams2007bayesian}. The paper notes that more sophisticated change-point methods could replace the threshold-based detector, particularly for streaming data where the trailing-window statistics break down. This is one of the more concrete suggestions in Section~5 and is a candidate for the \file{extensions/} directory of this reproduction.
+
+\paragraph{Multi-modal buffers.}
+Following Baddeley's multi-component model of working memory, the authors suggest adding modality-specific buffers (visual, auditory) alongside the current text-only similarity and contiguity buffers. The cognitive analogy is straightforward; the engineering requires a multi-modal base model rather than the text-only LLMs the current paper uses.
+
+\paragraph{Validation against human memory biases.}
+The paper measures alignment with human event boundaries (\cref{sec:human-alignment}). It does not measure whether EM-LLM exhibits the recency, primacy, or asymmetry effects observed in human free recall. The authors propose running the same probes used in human memory studies against EM-LLM and comparing the resulting curves.
+
+\subsection{Open questions for a reproducer}
+
+The list below is shorter than the author-stated one and is what the reproducer in this repository specifically wants answered as the runs come in. It is not a contribution claim; it is a checklist.
+
+\begin{itemize}
+  \item Does the contiguity buffer help on multi-document QA more than it hurts on single-document QA, in our reproduction's runs, by the same margin as in the paper?
+  \item At $k_r = 0.3$, what fraction of similarity-buffer events also appear in the contiguity buffer? A high overlap would suggest the two buffers are partly redundant; the paper does not report this.
+  \item How sensitive is the 10M-token passkey result to the disk offload threshold? The paper does not vary the offload regime; the reproduction will.
+  \item On Phi-3 and Phi-3.5, does the smaller base model exhibit a different optimal $\gamma$ than the LLaMA-3 family? The paper recommends $\gamma = 1.0$ across models but the Phi rows have weaker absolute scores.
+  \item Does the modularity-vs-conductance preference depend on the genre of the input (news vs.\ legal vs.\ code)? The paper's PG-19 experiments mix fiction and non-fiction without breaking out the split.
+\end{itemize}
+
+These questions belong to this reproduction, not to the paper, and should be folded into \file{docs/differences\_from\_paper.md} as the runs produce evidence.
