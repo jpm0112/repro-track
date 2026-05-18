@@ -102,5 +102,11 @@ resolve_paper_variant() {
     export VARIANT_OVERRIDES="$(variant_overrides "$variant")"
     export MODEL_GAMMA_OVERRIDE="$(model_gamma_override "$model")"
     echo "[paper-variant] model=$model variant=$variant"
-    [[ -n "$MODEL_GAMMA_OVERRIDE" ]] && echo "[paper-variant] extra: $MODEL_GAMMA_OVERRIDE"
+    # NOTE: do NOT use `[[ -n $x ]] && echo ...` here. When $x is empty, the
+    # test returns 1, becomes the function's exit status, and under `set -e`
+    # in the caller (02_run_*.sh) aborts the whole run before pred.py starts.
+    if [[ -n "$MODEL_GAMMA_OVERRIDE" ]]; then
+        echo "[paper-variant] extra: $MODEL_GAMMA_OVERRIDE"
+    fi
+    return 0
 }
