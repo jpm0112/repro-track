@@ -43,6 +43,10 @@ resolve_infllm_budget "$MODEL"
 OUT_DIR="$RESULTS_ROOT/longbench_infllm/${MODEL}_${BUDGET_TAG}"
 mkdir -p "$OUT_DIR"
 
+# shellcheck disable=SC1091
+source "$REPRO_ROOT/reproduction/scripts/shell/_capture_run_metadata.sh"
+write_run_metadata "$OUT_DIR"
+
 # InfLLM's per-model YAML naming may differ from EM-LLM's. We try a few
 # likely paths in order before failing out so the user gets a clear hint.
 CONFIG=""

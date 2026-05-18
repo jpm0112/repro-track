@@ -35,6 +35,10 @@ resolve_infllm_budget "$MODEL"
 OUT_DIR="$RESULTS_ROOT/infinitebench_infllm/${MODEL}_${BUDGET_TAG}"
 mkdir -p "$OUT_DIR"
 
+# shellcheck disable=SC1091
+source "$REPRO_ROOT/reproduction/scripts/shell/_capture_run_metadata.sh"
+write_run_metadata "$OUT_DIR"
+
 CONFIG=""
 for candidate in \
     "config/${MODEL}.yaml" \

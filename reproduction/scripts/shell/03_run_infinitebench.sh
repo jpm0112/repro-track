@@ -30,6 +30,10 @@ resolve_paper_variant "$MODEL" "${VARIANT:-}"
 OUT_DIR="$RESULTS_ROOT/infinitebench/${MODEL}_${VARIANT}"
 mkdir -p "$OUT_DIR"
 
+# shellcheck disable=SC1091
+source "$REPRO_ROOT/reproduction/scripts/shell/_capture_run_metadata.sh"
+write_run_metadata "$OUT_DIR"
+
 cd "$EMLLM_ROOT"
 python benchmark/pred.py \
     --config_path "config/${MODEL}.yaml" \
