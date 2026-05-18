@@ -65,8 +65,9 @@ source activate emllm 2>/dev/null || conda activate emllm
 
 echo "=== conda env: $CONDA_DEFAULT_ENV ==="
 echo "=== python: $(which python) ==="
-echo "=== handing off to 02_run_longbench.sh ==="
-bash reproduction/scripts/shell/02_run_longbench.sh
+echo "=== handing off to 02_run_longbench.sh (with -x trace) ==="
+# bash -x so the inner script's exec trace lands in our debug log too.
+bash -x reproduction/scripts/shell/02_run_longbench.sh
 RC=$?
 echo "=== 02_run_longbench.sh exited with code $RC ==="
 exit $RC
