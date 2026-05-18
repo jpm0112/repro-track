@@ -79,8 +79,10 @@
 }
 
 % Convenience commands for frequently used objects.
-\newcommand{\file}[1]{\texttt{#1}}
-\newcommand{\code}[1]{\texttt{#1}}
+% \seqsplit lets long identifiers and paths break across line ends without
+% sliding into the right margin.
+\newcommand{\file}[1]{\texttt{\seqsplit{#1}}}
+\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
 \newcommand{\param}[1]{\ensuremath{#1}}
 \newcommand{\Surprise}{\mathcal{S}}
 \newcommand{\Adj}{\mathbf{A}}

@@ -1,0 +1,156 @@
+\section{Algorithm walkthrough: \texttt{em\_llm/}}
+\label{sec:walkthrough}
+
+This chapter is a function-level read of the EM-LLM package as it ships under \file{em-llm-model/em\_llm/}. The order tracks the data flow: outer attention wrapper, context manager, similarity refinement, the small attention library, RoPE, then the Hugging Face patch that ties everything to a base model. Code excerpts are kept short; for anything longer than 20 lines the reader should open the file in an editor and follow along.
+
+\subsection{Package layout}
+\label{sec:walkthrough-layout}
+
+The package contents are listed below. Line counts are approximate and shift with upstream commits; symbol locations referenced later in this chapter use \texttt{file:line} pairs that were correct at commit \texttt{edb2e4a}.
+
+\begin{lstlisting}[style=shellstyle,basicstyle=\ttfamily\footnotesize]
+em_llm/
+  __init__.py            re-exports patch_hf and GreedySearch
+  attention/
+    __init__.py          dispatch tables ATTN_FORWARD, CAUSAL_LM_FORWARD
+    em_llm.py            em_llm_attn_forward, em_llm_causal_lm_forward
+    context_manager.py   ContextManager, CudaCache, MemoryBlock, VectorTensor
+    rope.py              RotaryEmbeddingESM (RoPE with distance scaling)
+    utils.py             masking and slicing helpers
+    similarity_refinement/
+      segmentation.py    events_with_similarity_adjustment
+      similarity.py      modularity, conductance, intra_inter_sim
+    dot_product_attention/
+      base.py            MultiStageDotProductAttention (abstract)
+      torch_impl.py      TorchMultiStageDotProductAttention
+  utils/
+    patch_hf.py          patch_hf, huggingface_forward, model_forward
+    greedy_search.py     GreedySearch (cache-aware generation)
+\end{lstlisting}
+
+The two public entry points re-exported from \file{em\_llm/\_\_init\_\_.py} are \code{patch\_hf} and \code{GreedySearch}. Everything else is reached through one of those two.
+
+\subsection{The attention forward: \file{attention/em\_llm.py}}
+\label{sec:walkthrough-em-llm}
+
+This file holds two top-level functions. The first, \code{em\_llm\_attn\_forward}, is a closure factory. The second, \code{em\_llm\_causal\_lm\_forward}, replaces the top-level \code{forward} of the causal LM and is where surprise gets computed and (optionally) refined.
+
+\paragraph{\code{em\_llm\_attn\_forward}} (\file{em\_llm.py:11}--\file{em\_llm.py:109}). The function takes EM-LLM's hyperparameters at outer scope and returns an inner \code{forward} that will replace the per-layer attention forward. Inside that inner \code{forward}, the call site:
+\begin{enumerate}
+  \item projects the input hidden states to $Q$, $K$, $V$ (\file{em\_llm.py:56}--\file{em\_llm.py:68});
+  \item on the first call for a layer, instantiates a \code{ContextManager} that becomes the per-layer KV cache (\file{em\_llm.py:70}--\file{em\_llm.py:93});
+  \item passes $Q$, $K$, $V$ to \code{past\_key\_value.append(\dots)}, which runs the retrieval and the attention itself (\file{em\_llm.py:98}--\file{em\_llm.py:101}); and
+  \item reshapes the output and applies the final output projection (\file{em\_llm.py:103}--\file{em\_llm.py:105}).
+\end{enumerate}
+The pattern is the same one Hugging Face uses for its own attention modules. Local and global $Q$, $K$, $V$ are initialised as the same tensors here; the split between local and global tokens happens inside the \code{ContextManager}.
+
+\paragraph{\code{em\_llm\_causal\_lm\_forward}} (\file{em\_llm.py:112}--\file{em\_llm.py:277}). This function is mounted as \code{model.forward} for the wrapped LLM. The most consequential block is the surprise computation followed by similarity-based boundary refinement.
+
+\begin{lstlisting}[caption={Surprise computation. \file{em\_llm/attention/em\_llm.py:197}--\file{em\_llm.py:205}.},captionpos=b]
+if em_labels is not None:
+    if em_labels.dtype != torch.bool:
+        prob = torch.softmax(logits, dim=-1)
+        surprisal = -torch.log(
+            torch.gather(prob, dim=-1, index=em_labels.unsqueeze(-1))
+        ).squeeze(-1)
+    else:
+        surprisal = em_labels
+else:
+    surprisal = None
+\end{lstlisting}
+
+The implementation matches \cref{eq:surprise} exactly: a softmax over the LM head logits, a gather at the observed-token index, and a negative log. The \code{em\_labels} argument lets the caller either pass token indices for the surprise lookup, or pass a precomputed boolean mask of boundaries.
+
+The threshold rule (\cref{eq:threshold}) is implemented a few lines later, with two code paths depending on whether the trailing window of surprise statistics is already populated. The branch at \file{em\_llm.py:218}--\file{em\_llm.py:225} computes \code{divide = surprisal > gamma * std + mean}, choosing the mean and standard deviation over the existing surprise buffer when the chunk is not yet large enough to provide them on its own.
+
+When refinement is enabled, the next block stacks the keys for the relevant layer range, computes the dot-product similarity matrix as $A = K K^\top$ (\file{em\_llm.py:245}), and dispatches each batch's candidate boundaries to \code{events\_with\_similarity\_adjustment} (\file{em\_llm.py:255}). The output replaces \code{divide} with the refined boundary mask before any block is added to memory. After the refinement pass, \code{update\_memory} is called on each layer's \code{ContextManager} with the final surprisal mask (\file{em\_llm.py:268}).
+
+\subsection{The context manager: \file{attention/context\_manager.py}}
+\label{sec:walkthrough-context-manager}
+
+This file is the largest in the package, around 1{,}000 lines, and owns the per-layer KV cache as well as the event store. Three classes carry the load: \code{CudaCache}, \code{MemoryBlock}, and \code{ContextManager}.
+
+\paragraph{\code{CudaCache}} (\file{context\_manager.py:8}--\file{context\_manager.py:28}). A small pool allocator for fixed-size GPU tensors. The cache holds \code{num\_units} buffers of size \code{unit\_size}; \code{alloc()} pops an idle index, \code{delete(idx)} returns it. The point is to amortise allocations across many block insertions instead of asking PyTorch for a fresh tensor every time.
+
+\paragraph{\code{MemoryBlock}} (\file{context\_manager.py:31}--around \file{context\_manager.py:200}). One event in storage. Each block keeps a CPU copy of its keys and values, optionally a GPU copy in a \code{CudaCache}, and optionally a disk-backed copy under \file{offload\_dir/}. The constructor signature is wide because the block needs to know which storage tier it lives on. The two flags that matter most are \code{load\_to\_cache} (eagerly copy to GPU) and \code{load\_to\_disk} (write keys and values to disk and free the in-memory copies).
+
+\paragraph{\code{ContextManager}} (\file{context\_manager.py:260}--\file{context\_manager.py:1020}). One instance per transformer layer, instantiated lazily by \code{em\_llm\_attn\_forward} the first time the layer sees data. The constructor accepts every EM-LLM hyperparameter that affects this layer's behaviour, including \code{n\_init}, \code{n\_local}, \code{max\_block\_size}, \code{surprisal\_threshold\_gamma}, \code{similarity\_refinement}, \code{use\_contiguity\_buffer}, \code{contiguity\_buffer\_size}, and the offload knobs.
+
+The three methods to read in order are \code{append}, \code{update\_memory}, and \code{\_retrieve\_and\_attend}.
+
+\paragraph{\code{append}} (\file{context\_manager.py:784}--\file{context\_manager.py:888}). The per-batch entry point called by the attention forward. The flow is:
+\begin{enumerate}
+  \item assert \code{batch\_size == 1} (\file{context\_manager.py:792}) and assert the chunk fits in \code{exc\_block\_size} (\file{context\_manager.py:791});
+  \item if \code{perhead} is set, reshape so each head can run independently (\file{context\_manager.py:794}--\file{context\_manager.py:808});
+  \item on the first call, initialise local KV tensors, the global remainder, and the disk-offload cache as needed (\file{context\_manager.py:810}--\file{context\_manager.py:821});
+  \item concatenate the new local keys and values onto the running local cache (\file{context\_manager.py:828}--\file{context\_manager.py:829});
+  \item project the global query with the layer-local position embedding (\file{context\_manager.py:834}--\file{context\_manager.py:836});
+  \item append the new global keys, values, and queries to the global remainder buffers (\file{context\_manager.py:841}--\file{context\_manager.py:845});
+  \item call \code{\_retrieve\_and\_attend(\dots)} to produce the attention output for this step (\file{context\_manager.py:878}--\file{context\_manager.py:883}).
+\end{enumerate}
+The local-vs-global split happens here: the same projected $Q$, $K$, $V$ tensors are written to both the local cache and the global remainder, and downstream code decides which slices each step's softmax attends to.
+
+\paragraph{\code{update\_memory}} (\file{context\_manager.py:891}--\file{context\_manager.py:1020}). Called once per generation step by \code{em\_llm\_causal\_lm\_forward} after the surprise computation. The method advances the boundary into the global remainder, accumulates surprise statistics for the next chunk, and calls \code{\_add\_block} for each completed event. The actual condition for cutting a new block uses the \code{divide} mask passed in via \code{exc\_surprisal}; when a position is marked as a boundary and the running block size has reached \code{max\_block\_size}, the block is sealed and the next one starts.
+
+\paragraph{\code{\_retrieve\_and\_attend}} (\file{context\_manager.py:658}--around \file{context\_manager.py:735}). The retrieval step. For each layer it computes representative-token similarity between the current query and every event's representatives, picks the top events by score, optionally enqueues their temporal neighbours into the contiguity buffer, and runs softmax attention over the union of (initial tokens, contiguity events, similarity events, local window). The actual attention computation is delegated to \code{TorchMultiStageDotProductAttention} from the small library described in \cref{sec:walkthrough-dpa}.
+
+\paragraph{Block-size constraint.} The \code{batch\_size == 1} assertion at \file{context\_manager.py:792} is the most visible operational limit, and it is enforced again at \file{context\_manager.py:950} inside \code{update\_memory}. There is no configuration flag to relax it; lifting it would require non-trivial refactoring of the per-batch lists scattered across the class.
+
+\subsection{Similarity refinement: \file{attention/similarity\_refinement/}}
+\label{sec:walkthrough-similarity}
+
+Two files. \file{segmentation.py} carries out the boundary adjustment; \file{similarity.py} provides the metric implementations. The implementations of modularity and conductance are short and worth reading directly.
+
+\begin{lstlisting}[caption={Modularity. \file{em\_llm/attention/similarity\_refinement/similarity.py:3}--\file{similarity.py:28}. The implementation matches \cref{eq:modularity}; \code{k\_i} and \code{k\_j} carry the degree sums, \code{expected\_edges} is the null-model term.},captionpos=b]
+def modularity(A, communities):
+    ndims = len(A.shape)
+    m = A.sum(dim=(-2, -1)) / 2
+
+    k_i = A.sum(dim=-2)
+    k_j = A.sum(dim=-1)
+    expected_edges = torch.einsum('...i,...j->...ij', k_i, k_j)
+    expected_edges /= (2 * m.unsqueeze(-1).unsqueeze(-1)) if ndims > 2 else (2 * m)
+
+    Q = torch.zeros(A.shape[:-2]) if ndims > 2 else 0.0
+    for community in communities:
+        sub_A = A[..., community, :][..., :, community]
+        sub_expected_edges = expected_edges[..., community, :][..., :, community]
+        Q += (sub_A - sub_expected_edges).sum(dim=(-2, -1)).cpu()
+    return Q / (4 * m.cpu())
+\end{lstlisting}
+
+Conductance lives in the same file at \file{similarity.py:30}--\file{similarity.py:57} and matches \cref{eq:conductance}. The implementation iterates over candidate communities, computes the cut at the boundary, divides by the smaller of the two community volumes, and returns the minimum, maximum, and mean conductance plus the per-community series. The \code{intra\_inter\_sim} function at \file{similarity.py:59}--\file{similarity.py:74} implements the I/IS ratio from Eq.\ 5 of the paper and is used in the segmentation-quality experiments rather than as a refinement objective.
+
+The refinement loop itself is in \code{events\_with\_similarity\_adjustment} (\file{segmentation.py:4}--\file{segmentation.py:50}). For each pair of consecutive candidate boundaries, the function takes a window twice the size of the proposed event, evaluates the chosen metric at every position in that window via \code{calc\_adjacent\_similarity\_with\_offset}, and picks the position that maximises modularity or I/IS, or minimises conductance. The \code{min\_size} parameter prevents events smaller than a configured floor from being created and is used to keep refinement from collapsing two surprise boundaries into one zero-width event.
+
+\subsection{Multi-stage dot-product attention: \file{attention/dot\_product\_attention/}}
+\label{sec:walkthrough-dpa}
+
+Two files. \file{base.py} defines \code{MultiStageDotProductAttention}, an abstract class with hooks for scoring, masking, and softmax accumulation. \file{torch\_impl.py} provides \code{TorchMultiStageDotProductAttention}, the only concrete implementation in the released code and the one used by the \code{ContextManager}.
+
+The library exists so that the per-step attention can operate over the union of four token regions (initial sinks, contiguity buffer, similarity buffer, local window) without writing one large attention call. Each region contributes a softmax accumulation that is folded into the running output. This factoring is what makes it cheap to add or drop a region between steps without re-running the entire attention.
+
+\subsection{Rotary embeddings: \file{attention/rope.py}}
+\label{sec:walkthrough-rope}
+
+The class \code{RotaryEmbeddingESM} wraps the standard rotary positional embedding with two pieces of machinery EM-LLM needs. First, a \code{distance\_scale} multiplier that lets the wrapper compress effective distances when running on a model whose original window has been extended (the long/short factor case for Phi-3 is the visible use). Second, \code{apply\_rotary\_pos\_emb\_one\_angle}, used inside \code{ContextManager.append} to apply a single fixed angle to retrieved-token queries so that they sit at a consistent, in-distribution position regardless of where they originally appeared in the stream. This is the implementation correlate of the fixed-position-embedding choice described in \cref{sec:rope-retrieved}.
+
+\subsection{The Hugging Face patch: \file{utils/patch\_hf.py}}
+\label{sec:walkthrough-patch-hf}
+
+The entry point \code{patch\_hf} (\file{patch\_hf.py:221}--\file{patch\_hf.py:293}) is short and dense. It does five things, in order:
+\begin{enumerate}
+  \item Look up the EM-LLM attention forward in the \code{ATTN\_FORWARD} dispatch table by \code{attn\_type} (default \code{"em\_llm"}), wrap it with \code{huggingface\_forward}, and bind the hyperparameters at construction time (\file{patch\_hf.py:234}).
+  \item Identify the base model's class. The release supports \code{LlamaForCausalLM}, \code{MistralForCausalLM}, \code{Qwen2ForCausalLM}, \code{Phi3ForCausalLM}, and \code{MiniCPMForCausalLM} (\file{patch\_hf.py:236}--\file{patch\_hf.py:243}). For anything else, \code{patch\_hf} raises.
+  \item Read the base model's rotary embedding configuration off the first layer, derive \code{distance\_scale} and \code{ext\_factors} (including the long-vs-short factor branch for Phi-3), and replace the model's positional embedding with a \code{RotaryEmbeddingESM} instance bound to the EM-LLM hyperparameters (\file{patch\_hf.py:245}--\file{patch\_hf.py:275}).
+  \item Walk \code{model.apply(set\_forward)} to replace every attention module's \code{forward} with the EM-LLM forward, keeping a reference to the old forward at \code{m.\_old\_forward} (\file{patch\_hf.py:277}--\file{patch\_hf.py:282}).
+  \item Replace \code{model.model.forward} with \code{model\_forward}, and \code{model.forward} with the EM-LLM causal-LM forward via the \code{CAUSAL\_LM\_FORWARD} dispatch table (\file{patch\_hf.py:284}--\file{patch\_hf.py:291}).
+\end{enumerate}
+The combined effect is that every call to the patched model now flows through EM-LLM's attention and through the surprise-and-refinement machinery, while the original weights and tokenizer are untouched. The \code{m.\_old\_forward} stash is there so the patch could in principle be reversed; the current code never reverses it.
+
+The \code{huggingface\_forward} adapter (\file{patch\_hf.py:10}--\file{patch\_hf.py:47}) bridges the call signatures: it pulls the per-layer projections (\code{q\_proj}, \code{k\_proj}, \code{v\_proj} for LLaMA-style layers, \code{qkv\_proj} for fused-projection layers) and forwards them as positional arguments to the inner EM-LLM forward.
+
+\subsection{Generation: \file{utils/greedy\_search.py}}
+\label{sec:walkthrough-greedy-search}
+
+\code{GreedySearch} is a cache-aware generation loop. It is a thin replacement for the Hugging Face generate, the difference being that it threads the per-layer \code{ContextManager} instances through every step rather than letting \code{generate} re-create caches. The class is small and almost entirely orchestration; the interesting behaviour all lives in the attention forward and the context manager. The benchmark harness in \cref{sec:benchmark} uses \code{GreedySearch} for the inference loop in \file{benchmark/pred.py}.
