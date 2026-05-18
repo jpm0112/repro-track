@@ -1,0 +1,65 @@
+\section{Benchmark harness: \texttt{em\_llm-model/benchmark/}}
+\label{sec:benchmark}
+
+The benchmark directory is the orchestration layer. It loads a base LLM, patches it with EM-LLM, streams a benchmark dataset through the model, writes per-example predictions to a JSONL file, and scores them. The chapter walks the five files in the order they get touched during a full run.
+
+\subsection{Inference: \file{pred.py}}
+\label{sec:bench-pred}
+
+\file{pred.py} is the largest file in the harness at 614 lines. The entry point is \code{main(args)} (\file{pred.py:533}), invoked once per worker process. The flow is:
+\begin{enumerate}
+  \item Resolve the output directory and, if logging is enabled, redirect \code{stdout} and \code{stderr} to a per-worker log file via the \code{DualLogger} class at \file{pred.py:517}.
+  \item Call \code{get\_model\_and\_tokenizer} (\file{pred.py:80}) to load the base LLM and apply \code{patch\_hf}.
+  \item Wrap the patched model in a \code{GreedySearch} from \file{em\_llm/utils/greedy\_search.py}.
+  \item For each dataset listed in the config, load the data (\code{load\_data} at \file{pred.py:281}, with \code{load\_infinite\_bench} at \file{pred.py:168} handling the $\infty$-Bench variants), look up the prompt template and max-generation length from JSON files under \file{benchmark/config/}, and call \code{get\_pred} (\file{pred.py:344}) to drive the per-example loop.
+\end{enumerate}
+
+\code{get\_model\_and\_tokenizer} has two branches (\file{pred.py:85}--\file{pred.py:107}). With \code{use\_hf\_acc} the model is loaded under the Accelerate \code{init\_empty\_weights} context, patched, then sharded across visible GPUs via \code{load\_checkpoint\_and\_dispatch}. Without it, the model is loaded directly to the single device in \code{device\_map}. In both cases, \code{patch\_hf(model, model\_config.type, **model\_config)} is the line that swaps in the EM-LLM forward. The \code{no\_split\_module\_classes} kwarg lists the layer classes the sharder is forbidden from splitting across devices, including the EM-LLM \code{ContextManager}.
+
+\code{get\_pred} (\file{pred.py:344}) is the actual generation loop. For each example, it builds the prompt (chat templating via \code{build\_chat} at \file{pred.py:110} for conversational models, plain concatenation otherwise), truncates to the configured maximum input length, runs \code{searcher.generate(\dots)} to produce the prediction, and appends a JSON line to the output file. The \code{past\_ids} mechanism at \file{pred.py:324} reads back any predictions already written for this dataset so that an interrupted run can resume without recomputing.
+
+The multi-process branch is gated on \code{world\_size > 1} (\file{pred.py:569}). Each worker is assigned a subset of examples by rank. There is no model-parallel split here; the model itself is either single-GPU or sharded via Accelerate inside one process. This reproduction's local configuration uses \code{world\_size=1} on the single RTX 3090 and lets ASA-X drive multi-GPU through SLURM rather than through this script.
+
+\paragraph{Extended passkey.} The 10M-token passkey experiment uses \code{extend\_passkey\_context} (\file{pred.py:131}), which takes an existing $\infty$-Bench passkey example and stuffs it with additional padding up to the requested length while keeping the passkey at a stable position relative to the haystack. The \code{extended\_passkey} field in the config controls the target length.
+
+\paragraph{Hooks into EM-LLM.} The harness does not import any EM-LLM internals beyond \code{patch\_hf} and \code{GreedySearch}. All algorithm-level hyperparameters travel as keyword arguments through \code{model\_config} into \code{patch\_hf} and from there to the per-layer \code{ContextManager}. This is what makes the OmegaConf override pattern (\cref{sec:wrappers-configs}) work without touching code: a config field like \code{model.surprisal\_threshold\_gamma} ends up as the \code{surprisal\_threshold\_gamma} argument to \code{em\_llm\_attn\_forward} through the kwargs forwarding chain.
+
+\subsection{LongBench scoring: \file{eval.py}}
+\label{sec:bench-eval}
+
+\file{eval.py} (217 lines) is run after a LongBench prediction file has been produced. The entry point is \code{compute\_scores}, but the externally interesting functions are \code{scorer} (\file{eval.py:143}) and \code{scorer\_e} (\file{eval.py:115}). The first computes the standard LongBench score per task; the second computes the length-stratified ``extended'' score that buckets predictions by input length (0--4K, 4K--8K, 8K+).
+
+Per-task scoring runs through \code{calc\_score} (\file{eval.py:134}), which dispatches by dataset name to one of the metrics in \file{metrics.py}. The dispatch is a lookup table inside \code{calc\_score} that maps each LongBench task to its native metric: F1 for QA, ROUGE for summarisation, exact-match for retrieval, code similarity for coding, classification accuracy for few-shot.
+
+\subsection{$\infty$-Bench scoring: \file{infinitebench\_eval.py}}
+\label{sec:bench-infbench}
+
+\file{infinitebench\_eval.py} is the $\infty$-Bench-specific scoring harness. It re-implements the metrics the $\infty$-Bench paper uses rather than rely on LongBench's metric set. The function \code{get\_score\_one} (\file{infinitebench\_eval.py:371}) is the entry point: it takes a single prediction and label plus a task name, and dispatches to one of the per-task scorers (\code{get\_score\_one\_kv\_retrieval}, \code{get\_score\_one\_passkey}, \code{get\_score\_one\_math\_find}, and so on, defined at \file{infinitebench\_eval.py:138}--\file{infinitebench\_eval.py:346}). The wrapper \code{compute\_scores} (\file{infinitebench\_eval.py:439}) iterates over a prediction file and aggregates per-task scores.
+
+The duplicated normalisation functions (\code{normalize\_answer}, \code{normalize\_zh\_answer}) at the top of the file mirror the ones in \file{metrics.py} but differ in details that matter for the $\infty$-Bench scoring rules. Keeping them separate is what allows the two scoring scripts to be run independently of each other.
+
+\subsection{Shared metric primitives: \file{metrics.py}}
+\label{sec:bench-metrics}
+
+\file{metrics.py} holds the small functions that the LongBench scorer calls into. Each function takes a prediction string and a ground-truth string (or a list of ground truths) and returns a numeric score. The implementations are short and standard. The full list, with line numbers in the released code:
+\begin{itemize}
+  \item \code{normalize\_answer} (\file{metrics.py:13}) and \code{normalize\_zh\_answer} (\file{metrics.py:32}): canonicalise English and Chinese strings before comparison.
+  \item \code{count\_score} (\file{metrics.py:48}), \code{retrieval\_score} (\file{metrics.py:57}), \code{retrieval\_zh\_score} (\file{metrics.py:69}): exact-match-style scores for the retrieval tasks.
+  \item \code{code\_sim\_score} (\file{metrics.py:81}): fuzzy similarity for code-completion tasks.
+  \item \code{classification\_score} (\file{metrics.py:90}): accuracy for few-shot classification.
+  \item \code{rouge\_score} (\file{metrics.py:115}), \code{rouge\_zh\_score} (\file{metrics.py:123}): ROUGE-L for summarisation tasks.
+  \item \code{f1\_score} (\file{metrics.py:129}), \code{qa\_f1\_score} (\file{metrics.py:139}), \code{qa\_f1\_zh\_score} (\file{metrics.py:148}): F1 for QA tasks.
+\end{itemize}
+Reproducers who want to extend the harness with new metrics typically add them here and register them in \code{calc\_score} inside \file{eval.py}.
+
+\subsection{Data preparation: \file{download.py}}
+\label{sec:bench-download}
+
+\file{download.py} fetches the LongBench, $\infty$-Bench, and passkey datasets from the Hugging Face Hub and writes them to local paths the rest of the harness expects. Despite the name, the file is mostly a small driver around \code{datasets.load\_dataset(\dots)} with the right repository identifiers; there is no scraping or custom-format parsing. The reproduction calls it through \file{reproduction/scripts/shell/01\_download\_data.sh}.
+
+Gated models present the only complication. The LongBench and $\infty$-Bench datasets are public; the base LLMs (Mistral, LLaMA, Phi) require accepting a license on the Hub. The download script does not handle authentication; the reproduction's runbook requires \code{huggingface-cli login} before \code{01\_download\_data.sh}.
+
+\subsection{Where this hands off to the reproduction}
+\label{sec:benchmark-handoff}
+
+Outputs from \file{pred.py} land at the path passed in via the \code{output\_dir\_path} field of the config. The reproduction sets that path through \file{reproduction/configs/<system>/<benchmark>.yaml} so results land under \file{reproduction/results/<system>/<benchmark>/<model>\_<variant>/}. The scoring step in \file{eval.py} and \file{infinitebench\_eval.py} produces summary files in the same directory. \cref{sec:repro-pipeline} describes the shell wrappers that drive this whole sequence end to end.
