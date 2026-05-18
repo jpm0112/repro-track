@@ -1,34 +1,25 @@
 #!/bin/bash
-# InfLLM ∞-Bench baseline on ASAX (1× A100, ~24h on a 7-8B model).
-# Paper Table 2 reports InfLLM ∞-Bench numbers only for mistral, llama3, llama31.
+# InfLLM Infinity-Bench baseline on ASAX (paper Table 2 comparator).
+# Paper only reports InfLLM ∞-Bench for the 7-8B models (mistral, llama3, llama31).
 #
-# Submit via ASA's wrapper:
-#   MODEL=mistral run_script reproduction/scripts/asax/infinitebench_infllm.sh
-# At the prompts answer (adjust to current ASAX class names):
-#   queue / class:  GPU-enabled (A100)
-#   GPUs:           1
-#   walltime:       24:00:00
-#   memory:         200gb
-# Monitor with: qstat -u $USER
+# Pre-req: infllm-model/ populated; see docs/infllm_setup.md.
+#
+# Submit:
+#   run_gpu reproduction/scripts/asax/infinitebench_infllm.sh
+# Prompts: gpu / 8 / 26:00:00 / 200gb / 1 GPU
+#
+# Override MODEL via ~/repro-track/.job_config:
+#   cat > ~/repro-track/.job_config <<EOF
+#   export MODEL=mistral
+#   EOF
+#   run_gpu reproduction/scripts/asax/infinitebench_infllm.sh
 
-set -eo pipefail
-
-# See longbench.sh for why we don't use BASH_SOURCE-based resolution here.
-REPO_ROOT="${PBS_O_WORKDIR:-${REPRO_ROOT:-$HOME/repro-track}}"
-[[ -d "$REPO_ROOT/reproduction" ]] || {
-    echo "FATAL: no reproduction/ tree at $REPO_ROOT" >&2
-    exit 1
-}
-cd "$REPO_ROOT"
-
+BENCH_TAG="infinitebench-infllm"
 # shellcheck disable=SC1091
-source reproduction/scripts/env/asax.env
+source "$(dirname "${BASH_SOURCE[0]}")/_asax_job_setup.sh"
 
-source activate emllm 2>/dev/null || conda activate emllm
-
-LOG_DIR="reproduction/results/asax/logs"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/infinitebench-infllm-$(date +%Y%m%d-%H%M%S)-${SLURM_JOB_ID:-$$}.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
-
+echo "=== handing off to 07_run_infllm_infinitebench.sh ==="
 bash reproduction/scripts/shell/07_run_infllm_infinitebench.sh
+RC=$?
+echo "=== 07_run_infllm_infinitebench.sh exited with code $RC ==="
+exit $RC

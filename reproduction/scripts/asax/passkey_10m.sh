@@ -1,40 +1,35 @@
 #!/bin/bash
-# 10M-token PassKey reproduction on ASAX (4× A100, ~48h on Mistral-7B).
-# Multi-GPU layer split is auto-triggered by pred.py when
-# torch.cuda.device_count() > 1. Disk offload is required at this scale.
+# Extended PassKey reproduction on ASAX.
+# 10M tokens needs 4 GPUs and ~48h; 1M tokens is the cheaper version
+# that fits in ~24h on a single GPU.
 #
 # Submit via ASA's wrapper:
-#   run_script reproduction/scripts/asax/passkey_10m.sh
-# At the prompts answer (adjust to current ASAX class names):
-#   queue / class:  a GPU-enabled class with A100s available
-#   GPUs:           4
-#   walltime:       48:00:00
-#   memory:         512gb
-# Monitor with: qstat -u $USER
+#   run_gpu reproduction/scripts/asax/passkey_10m.sh
+# At the prompts answer (for 10M):
+#   queue:    gpu
+#   cores:    16
+#   walltime: 48:00:00
+#   memory:   512gb
+#   GPUs:     4
+# For 1M, request 1 GPU / 32gb / 26:00:00 instead.
 #
-# To run a shorter passkey length (e.g. 1M tokens for a smoke test):
-#   EXTENDED_PASSKEY_K=1024 run_script reproduction/scripts/asax/passkey_10m.sh
+# Configure via ~/repro-track/.job_config — example for the 10M Mistral run:
+#   cat > ~/repro-track/.job_config <<EOF
+#   export MODEL=mistral
+#   export EXTENDED_PASSKEY_K=10240
+#   export CUDA_VISIBLE_DEVICES=0,1,2,3      # required for 10M (4-GPU split)
+#   EOF
+#   run_gpu reproduction/scripts/asax/passkey_10m.sh
+#
+# For a 1M smoke test (~24h, 1 GPU): set EXTENDED_PASSKEY_K=1024 and leave
+# CUDA_VISIBLE_DEVICES at the default (single GPU).
 
-set -eo pipefail
-
-# See longbench.sh for why we don't use BASH_SOURCE-based resolution here.
-REPO_ROOT="${PBS_O_WORKDIR:-${REPRO_ROOT:-$HOME/repro-track}}"
-[[ -d "$REPO_ROOT/reproduction" ]] || {
-    echo "FATAL: no reproduction/ tree at $REPO_ROOT" >&2
-    exit 1
-}
-cd "$REPO_ROOT"
-
+BENCH_TAG="passkey"
 # shellcheck disable=SC1091
-source reproduction/scripts/env/asax.env
+source "$(dirname "${BASH_SOURCE[0]}")/_asax_job_setup.sh"
 
-source activate emllm 2>/dev/null || conda activate emllm
-
-LOG_DIR="reproduction/results/asax/logs"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/passkey10m-$(date +%Y%m%d-%H%M%S)-${SLURM_JOB_ID:-$$}.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
-
-EXTENDED_PASSKEY_K="${EXTENDED_PASSKEY_K:-10240}" \
-ALLOW_DISK_OFFLOAD=True \
-    bash reproduction/scripts/shell/04_run_passkey_extended.sh
+echo "=== handing off to 04_run_passkey_extended.sh ==="
+bash reproduction/scripts/shell/04_run_passkey_extended.sh
+RC=$?
+echo "=== 04_run_passkey_extended.sh exited with code $RC ==="
+exit $RC
