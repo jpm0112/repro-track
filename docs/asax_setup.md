@@ -138,6 +138,13 @@ of how `run_script` captures its own output.
   created under the default name. Either run `00_env_setup.sh` first, or
   point at the explicit prefix: `source activate $SCRATCH/conda-envs/emllm`.
 
+## Things that went wrong the first time
+
+If something silently fails, check `docs/asax_lessons_learned.md` — that
+file collects every gotcha we hit during EM-LLM bring-up (PBS not
+inheriting env vars, `cuda/11.8.0` breaking libstdc++, PBS `gpu` queue
+not isolating GPU visibility, etc.) and the fix for each.
+
 ## When the run finishes
 
 Results land in `reproduction/results/asax/<benchmark>/<model>/result.json`.
