@@ -19,7 +19,25 @@
 #
 # Full list of submit commands per paper row: docs/paper_reproduction_runbook.md
 
+# Capture EVERYTHING to a known log file in $HOME immediately, before any
+# command can fail silently. run_gpu's PBS .o file sometimes doesn't catch
+# the user script's stdout/stderr, so this is our guaranteed-visible trail.
+mkdir -p "$HOME/repro-track/reproduction/results/asax/logs"
+DEBUG_LOG="$HOME/repro-track/reproduction/results/asax/logs/longbench-$(date +%Y%m%d-%H%M%S)-${PBS_JOBID:-local}.log"
+exec > "$DEBUG_LOG" 2>&1
+set -x
+
 set -eo pipefail
+
+# Diagnostic header — see exactly what env we landed in.
+echo "=== env at script start ==="
+echo "PWD=$PWD"
+echo "HOME=$HOME"
+echo "PBS_JOBID=${PBS_JOBID:-unset}"
+echo "PBS_O_WORKDIR=${PBS_O_WORKDIR:-unset}"
+echo "REPRO_ROOT=${REPRO_ROOT:-unset}"
+echo "BASH_SOURCE[0]=${BASH_SOURCE[0]}"
+echo "=========================="
 
 # Resolve repo root. ASA's run_gpu/run_script copies this script to a
 # per-node /scratch-local dir and runs it from there, so BASH_SOURCE-based
@@ -28,8 +46,8 @@ set -eo pipefail
 # the final fallback (ASA homes are NFS-shared across nodes).
 REPO_ROOT="${PBS_O_WORKDIR:-${REPRO_ROOT:-$HOME/repro-track}}"
 [[ -d "$REPO_ROOT/reproduction" ]] || {
-    echo "FATAL: no reproduction/ tree at $REPO_ROOT" >&2
-    echo "       set REPRO_ROOT or fix PBS_O_WORKDIR before re-submitting." >&2
+    echo "FATAL: no reproduction/ tree at $REPO_ROOT"
+    echo "       set REPRO_ROOT or fix PBS_O_WORKDIR before re-submitting."
     exit 1
 }
 cd "$REPO_ROOT"
@@ -37,13 +55,10 @@ cd "$REPO_ROOT"
 # shellcheck disable=SC1091
 source reproduction/scripts/env/asax.env
 
-# Activate the conda env — matches the user's existing ASA pattern.
+# Activate the conda env. Conda's activation hooks reference unset MKL vars
+# that trip nounset, so make sure we're not under set -u here.
+set +u
 source activate emllm 2>/dev/null || conda activate emllm
-
-# Structured log alongside whatever run_script captures on its own.
-LOG_DIR="reproduction/results/asax/logs"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/longbench-$(date +%Y%m%d-%H%M%S)-${SLURM_JOB_ID:-$$}.log"
-exec > >(tee -a "$LOG_FILE") 2>&1
+set -u 2>/dev/null || true
 
 bash reproduction/scripts/shell/02_run_longbench.sh
