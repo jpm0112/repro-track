@@ -11,10 +11,14 @@
 #   memory:         200gb
 # Monitor with: qstat -u $USER
 
-set -euo pipefail
+set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# See longbench.sh for why we don't use BASH_SOURCE-based resolution here.
+REPO_ROOT="${PBS_O_WORKDIR:-${REPRO_ROOT:-$HOME/repro-track}}"
+[[ -d "$REPO_ROOT/reproduction" ]] || {
+    echo "FATAL: no reproduction/ tree at $REPO_ROOT" >&2
+    exit 1
+}
 cd "$REPO_ROOT"
 
 # shellcheck disable=SC1091

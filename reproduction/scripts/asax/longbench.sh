@@ -19,11 +19,19 @@
 #
 # Full list of submit commands per paper row: docs/paper_reproduction_runbook.md
 
-set -euo pipefail
+set -eo pipefail
 
-# Resolve repo root regardless of where this is submitted from.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+# Resolve repo root. ASA's run_gpu/run_script copies this script to a
+# per-node /scratch-local dir and runs it from there, so BASH_SOURCE-based
+# resolution lands in the wrong place. PBS_O_WORKDIR is the submit dir
+# (set by PBS); REPRO_ROOT works when sourced asax.env first; $HOME is
+# the final fallback (ASA homes are NFS-shared across nodes).
+REPO_ROOT="${PBS_O_WORKDIR:-${REPRO_ROOT:-$HOME/repro-track}}"
+[[ -d "$REPO_ROOT/reproduction" ]] || {
+    echo "FATAL: no reproduction/ tree at $REPO_ROOT" >&2
+    echo "       set REPRO_ROOT or fix PBS_O_WORKDIR before re-submitting." >&2
+    exit 1
+}
 cd "$REPO_ROOT"
 
 # shellcheck disable=SC1091
