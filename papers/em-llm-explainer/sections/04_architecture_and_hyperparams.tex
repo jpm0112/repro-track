@@ -1,0 +1,69 @@
+\section{Architecture and hyperparameters}
+\label{sec:architecture}
+
+This chapter pins down what EM-LLM looks like as an operational object: the layout of the effective context, the positional encoding convention for retrieved tokens, the way the wrapper attaches to a Hugging Face model, and the hyperparameters a user actually sets at runtime.
+
+\subsection{The three-part context}
+\label{sec:three-part-context}
+
+At every generation step, each transformer layer attends to a context that is a union of three groups (paper Fig.\ 3C). The groups are disjoint and the boundaries are explicit.
+
+\paragraph{Initial tokens.}
+The first 128 token positions are held fixed across the entire run. They are not segmented into events and they are not subject to eviction. Following \textcite{xiao2024attsinks}, these positions act as attention sinks: even after the rest of the long history has been swapped out to episodic memory, the softmax in each head can still concentrate mass on the sinks, which stabilises the attention distribution. The exact count of 128 is inherited from the InfLLM defaults and is not reported as sensitive in the EM-LLM ablations.
+
+\paragraph{Local context.}
+The local context holds the most recent tokens that fit inside the underlying LLM's training window (typically 4K). Within this window the model runs full softmax attention with no modification. This is the part of EM-LLM that behaves like an unaltered transformer, and it carries the analogy to working memory: a small, attention-controlled buffer that holds whatever is needed for the immediate task \cite{baddeley1992working,cowan2001focus}.
+
+\paragraph{Evicted tokens (episodic memory).}
+Everything older than the local context lives in the episodic store. These tokens are organised into events by the segmentation and refinement steps of \cref{sec:method}. The events are kept in a KV cache that can stay on GPU, spill to CPU, or be paged to disk depending on memory pressure (the \file{ContextManager} class, walked through in \cref{sec:walkthrough}). At each generation step, the similarity buffer and the contiguity buffer load a subset of these events back into the LLM's effective context for that step alone; events not retrieved are invisible to the softmax during that step but are not deleted.
+
+The total effective context at one generation step is therefore the union of: initial tokens, contiguity buffer events, similarity buffer events, and local context tokens. The sizes of the two buffers are governed by the hyperparameters in \cref{sec:hparams}.
+
+\subsection{Positional encoding for retrieved tokens}
+\label{sec:rope-retrieved}
+
+Retrieved events sit at original positions that can be millions of tokens deep. Asking the LLM to apply its native RoPE rotation at such positions is not a good plan: the positional embeddings the model was trained on never reached those values, and the predictable consequence is degraded attention quality even when the underlying tokens are sensible \cite{kazemnejad2024impact,su2024roformer}.
+
+EM-LLM's response, following \textcite{xiao2024infllm}, is to assign retrieved tokens a fixed, in-distribution positional encoding rather than their true original positions. The choice mirrors the approach that \textcite{raffel2020exploring} used in T5, where retrieved content is treated as a separate, near-origin segment for the purpose of position-aware attention. Concretely, after a similarity or contiguity retrieval pulls an event back into the context, the retrieved tokens are placed at positions that the LLM has seen during training; the local context continues to use its native RoPE positions. This preserves the LLM's normal attention behaviour on retrieved content at the cost of not telling the LLM how far back in the original stream the retrieved tokens came from. That distance signal, the paper argues, is more usefully carried by the contiguity buffer.
+
+\subsection{Wrapping a frozen LLM via \texttt{patch\_hf}}
+\label{sec:patch-hf}
+
+The whole pipeline operates as a runtime patch on a Hugging Face \texttt{transformers} model. The function \file{em\_llm.utils.patch\_hf.patch\_hf} replaces the attention-forward methods of the target model with EM-LLM's own implementation; it does not fork \file{transformers} and it does not require a model rewrite. The LLM weights are loaded normally, then the patch swaps in the EM-LLM context manager, the surprise-driven boundary detector, and the per-layer retrieval logic.
+
+Five base models are supported in the released codebase, and each ships with a matching configuration template under \file{em-llm-model/benchmark/config/}: Mistral-7B-v0.2 \cite{jiang2023mistral}, LLaMA-2-7B \cite{touvron2023llama2}, LLaMA-3-8B and LLaMA-3.1-8B \cite{meta2024llama3}, and Phi-3 and Phi-3.5 \cite{abdin2024phi3}. The patch is architecture-aware in the limited sense that it knows the attention class name of each model; adding a new model requires extending that lookup but no other change to the EM-LLM core. The walkthrough in \cref{sec:walkthrough-patch-hf} traces the actual mechanics.
+
+The current release supports batch size 1 only. This is a hard constraint asserted in \file{context\_manager.py}, not a guideline. It is the most visible operational limit of the codebase and the most likely thing to bite a reproducer who tries to use the wrapper for evaluation in parallel rather than running multiple jobs.
+
+\subsection{Hyperparameters}
+\label{sec:hparams}
+
+\cref{tab:hparams} collects the runtime knobs a user typically adjusts, the symbol used in the paper, the role each one plays, the range explored in the paper's experiments, and the value the reproduction uses as a default. Where the paper and the implementation disagree on naming, both names are given.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{5.2cm}>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.2cm}}
+  \toprule
+  Symbol (paper) & Role & Range tested & Default \\
+  \midrule
+  $\gamma$ & Surprise threshold scale in \cref{eq:threshold}; larger $\gamma$ means fewer boundaries & 1.0, 1.5, 2.0, 2.5, 3.0, 3.5 & $1.0$ \\
+  $\tau$ & Trailing window length for $\mu$ and $\sigma$ in \cref{eq:threshold} & implementation default & per config \\
+  $k$ & Total retrieved-event budget per layer, in tokens & $4\text{K}, 8\text{K}$ in reported runs & $4\text{K}{+}4\text{K}$ \\
+  $k_r = k_c / k$ & Fraction of $k$ devoted to the contiguity buffer & $\{0.3, 0.5, 0.7\}$ & $0.3$ \\
+  $n$ & Neighbour radius for the contiguity buffer, in events & $1$ throughout the paper & $1$ \\
+  $m$ & Chunk size for the boundary refinement loop & implementation default & per config \\
+  refinement metric & Modularity vs.\ conductance (\cref{eq:modularity,eq:conductance}) & both reported & modularity \\
+  \texttt{\seqsplit{max\_block\_size}} & Maximum tokens per stored event & not a paper hyperparameter & per config \\
+  \texttt{\seqsplit{min\_free\_cpu\_memory}} & Memory headroom before CPU offload triggers & not a paper hyperparameter & 8 GB on RTX 3090 \\
+  \texttt{\seqsplit{disk\_offload\_threshold}} & Token count above which events page to disk & not a paper hyperparameter & 200{,}000 on RTX 3090 \\
+  \texttt{\seqsplit{vector\_offload\_threshold}} & Token count above which event reps page to CPU & not a paper hyperparameter & 30{,}000 on RTX 3090 \\
+  \bottomrule
+\end{tabular}
+\caption{Runtime hyperparameters of EM-LLM. The top block lists parameters from the paper itself; the bottom block lists implementation-only knobs that govern offload behaviour and are tuned per hardware setup in \file{docs/hardware\_adaptations.md}.}
+\label{tab:hparams}
+\end{table}
+
+The most consequential choice for a reproducer is the local-plus-retrieved budget, written in the configs as ``4k+4k'' or ``4k+2k''. The first number is the size of the local window, the second the size of the retrieved buffer, both in tokens. The paper's main results table (Table~1) uses 4k+2k for Mistral-v0.2 and 4k+4k for the LLaMA-3 family, matching the InfLLM baseline budgets so comparisons are like-for-like. The Phi family uses 1k+3k, again matching the InfLLM setting for those models.
+
+The offload thresholds in the lower block of \cref{tab:hparams} do not appear in the paper but matter for any run that approaches the 1M-plus token regime on commodity GPUs. They are documented separately in \file{docs/hardware\_adaptations.md} and discussed in \cref{sec:repro-pipeline}.
