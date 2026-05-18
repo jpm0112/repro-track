@@ -8,14 +8,32 @@ ASAX uses ASA's `run_script` wrapper for submission and `qstat` for status —
 not raw `sbatch`. Resource specs (GPU count, walltime, memory) are passed to
 `run_script` at submit time, not as `#SBATCH` directives in the script.
 
+## Storage layout on ASA's asax cluster
+
+ASA's asax does **not** provision a personal `/scratch/<user>` directory.
+Instead each account gets a generous **home (100 GB hard, 90 GB soft quota)**
+plus `/scratch-local` (per-compute-node ephemeral). The reproduction layout
+is therefore:
+
+| Path | Purpose | Persistence |
+|------|---------|-------------|
+| `$HOME/repro-track` | code + configs + persistent results | persistent, quota-limited |
+| `$HOME/.cache/huggingface` | model weights + benchmark datasets | persistent (~14 GB per 7-8B model) |
+| `/scratch-local/emllm_offload_<user>_<jobid>` | transient per-job offload | wiped between jobs |
+
+A bare home directory will start at ~30-50 GB used; adding the conda env
+(~10 GB), Mistral weights (~14 GB), and benchmarks (~20 GB) puts you near
+the soft quota. Stay under by only pre-downloading the models you actually
+plan to run (override `MODELS=` in `00b_login_node_prep.sh`).
+
 ## First-time login-node setup
 
 ```bash
 ssh <user>@<asax-login>      # check the ASA portal for current login hostname
-cd $SCRATCH
+cd $HOME
 
-# Clone — current working tree includes a vendored em-llm-model submodule
-git clone --recurse-submodules https://github.com/<your-user>/repro-track.git
+# Clone — current working tree includes a vendored em-llm-model
+git clone https://github.com/<your-user>/repro-track.git
 cd repro-track
 
 # Source the ASAX env (loads modules, sets paths)
@@ -103,8 +121,10 @@ of how `run_script` captures its own output.
 
 ## Common gotchas
 
-- **Home quota exceeded.** Move conda env, HF cache, and any sizeable artifact
-  to `$SCRATCH`. Default `asax.env` already does this.
+- **Home quota exceeded.** ASA caps home at 100 GB hard / 90 GB soft. Trim
+  the HF cache (`du -sh ~/.cache/huggingface/hub/models--*` to find big
+  ones), delete model weights you don't currently need, or move the conda
+  env to a less crowded prefix.
 - **`scripts/download.sh` fails with "no internet".** You ran it on a compute
   node by accident. Run it from a login node only.
 - **Job killed by OOM.** Memory request in `run_script` was too low for the
