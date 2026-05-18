@@ -27,7 +27,12 @@ DEBUG_LOG="$HOME/repro-track/reproduction/results/asax/logs/longbench-$(date +%Y
 exec > "$DEBUG_LOG" 2>&1
 set -x
 
-set -eo pipefail
+# NOTE: we deliberately do NOT use `set -e` in this wrapper. ASA's module
+# profile (/apps/profiles/modules_asax.sh.dyn) and conda's activation
+# hooks legitimately return non-zero from internal tests, and `set -e`
+# would silently abort us mid-source. The downstream 02_run_longbench.sh
+# has its own `set -euo pipefail` for the actual work.
+set -o pipefail
 
 # Diagnostic header — see exactly what env we landed in.
 echo "=== env at script start ==="
@@ -45,20 +50,23 @@ echo "=========================="
 # (set by PBS); REPRO_ROOT works when sourced asax.env first; $HOME is
 # the final fallback (ASA homes are NFS-shared across nodes).
 REPO_ROOT="${PBS_O_WORKDIR:-${REPRO_ROOT:-$HOME/repro-track}}"
-[[ -d "$REPO_ROOT/reproduction" ]] || {
+if [[ ! -d "$REPO_ROOT/reproduction" ]]; then
     echo "FATAL: no reproduction/ tree at $REPO_ROOT"
     echo "       set REPRO_ROOT or fix PBS_O_WORKDIR before re-submitting."
     exit 1
-}
+fi
 cd "$REPO_ROOT"
 
 # shellcheck disable=SC1091
 source reproduction/scripts/env/asax.env
 
-# Activate the conda env. Conda's activation hooks reference unset MKL vars
-# that trip nounset, so make sure we're not under set -u here.
-set +u
+echo "=== asax.env sourced, attempting conda activate ==="
 source activate emllm 2>/dev/null || conda activate emllm
-set -u 2>/dev/null || true
 
+echo "=== conda env: $CONDA_DEFAULT_ENV ==="
+echo "=== python: $(which python) ==="
+echo "=== handing off to 02_run_longbench.sh ==="
 bash reproduction/scripts/shell/02_run_longbench.sh
+RC=$?
+echo "=== 02_run_longbench.sh exited with code $RC ==="
+exit $RC
