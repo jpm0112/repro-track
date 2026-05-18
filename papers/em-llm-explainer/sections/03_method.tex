@@ -115,7 +115,7 @@ When an event is retrieved by similarity, EM-LLM also enqueues its temporal neig
 \end{figure}
 
 \paragraph{Total context.}
-The total number of retrieved events at each step is $k = k_s + k_c$. The paper expresses experimental settings in tokens rather than events, so configurations like ``4k local + 4k retrieved'' refer to maximum token budgets. The split between similarity and contiguity is controlled by the contiguity ratio $k_r = k_c / k$. The paper sweeps $k_r \in \{0.3, 0.5, 0.7\}$ and reports $k_r = 0.3$ as a robust default; the similarity buffer dominates by token count, with the contiguity buffer playing a smaller, supplementary role.
+The total number of retrieved events at each step is $k = k_s + k_c$. The paper expresses experimental settings in tokens rather than events, so configurations like ``4k local + 4k retrieved'' refer to maximum token budgets. The split between similarity and contiguity is controlled by the contiguity ratio $k_r = k_c / k$. The paper sweeps $k_r \in \{0.3, 0.5, 0.7\}$ and reports $k_r = 0.3$ as a safe default; the similarity buffer dominates by token count, with the contiguity buffer playing a smaller, supplementary role.
 
 \paragraph{Per-layer independence.}
 Every transformer layer carries out its own retrieval. This is one of the design choices that most clearly separates EM-LLM from prompt-level RAG. A RAG system attends to retrieved chunks once, at the input layer, and then every later layer reads transformed versions of the same retrieved content. EM-LLM lets different layers pull in different events from the same memory store. The paper argues (Section~4.1, Fig.~1) that this per-layer flexibility is the main source of its 30.5-point LongBench advantage over the NV-Embed-v2 RAG baseline.
