@@ -80,6 +80,17 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 echo "=== forced PATH+LD_LIBRARY_PATH to prefer $CONDA_PREFIX ==="
 echo "=== python now: $(which python) ==="
 
+# ASA's PBS doesn't isolate GPU visibility — even when you request
+# `ngpus=1` the job sees every GPU on the assigned node. That makes
+# pred.py auto-enable use_hf_acc (multi-GPU layer split), which then
+# passes the HF repo name to load_checkpoint_and_dispatch and errors
+# out because that function requires a local path. Cap CUDA_VISIBLE_DEVICES
+# to one device so torch.cuda.device_count() == 1 and we take the single-
+# GPU branch. Override on the run_gpu line for true multi-GPU jobs
+# (e.g., CUDA_VISIBLE_DEVICES=0,1,2,3 for passkey 10M).
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+echo "=== CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES ==="
+
 echo "=== handing off to 02_run_longbench.sh (with -x trace) ==="
 # bash -x so the inner script's exec trace lands in our debug log too.
 bash -x reproduction/scripts/shell/02_run_longbench.sh
