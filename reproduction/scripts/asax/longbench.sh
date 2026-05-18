@@ -65,6 +65,15 @@ source activate emllm 2>/dev/null || conda activate emllm
 
 echo "=== conda env: $CONDA_DEFAULT_ENV ==="
 echo "=== python: $(which python) ==="
+
+# Prefer conda's newer libstdc++ over the system one loaded by the gcc
+# module. The cuda/11.8.0 module forces gcc back to 9.5.0_all, whose
+# libstdc++ lacks GLIBCXX_3.4.29 (needed by Pillow's libLerc, pulled in
+# by transformers). Without this, `import transformers` raises a
+# RuntimeError about the missing symbol.
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+echo "=== LD_LIBRARY_PATH prefixed with: $CONDA_PREFIX/lib ==="
+
 echo "=== handing off to 02_run_longbench.sh (with -x trace) ==="
 # bash -x so the inner script's exec trace lands in our debug log too.
 bash -x reproduction/scripts/shell/02_run_longbench.sh
