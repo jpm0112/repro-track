@@ -1,0 +1,92 @@
+% Shared preamble for the EM-LLM Reader's Companion.
+% Loaded once from main.tex; chapters never repeat \usepackage.
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{microtype}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage[ruled,linesnumbered]{algorithm2e}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{csquotes}
+
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc,fit,backgrounds,decorations.pathreplacing,shapes.geometric}
+
+\usepackage[backend=biber,style=numeric,sorting=none,maxbibnames=99]{biblatex}
+\addbibresource{refs.bib}
+
+\usepackage[colorlinks=true,linkcolor=black!70!blue,citecolor=black!50!blue,urlcolor=black!50!blue]{hyperref}
+\usepackage[capitalize,noabbrev]{cleveref}
+
+% Python listing style. The intent here is dense but readable code on the page,
+% so we keep numbers on the left and avoid heavy frames that fight with the
+% body text.
+\definecolor{lstbg}{HTML}{F7F7F2}
+\definecolor{lstkw}{HTML}{0B4F6C}
+\definecolor{lststr}{HTML}{8B5E00}
+\definecolor{lstcom}{HTML}{577590}
+
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    backgroundcolor=\color{lstbg},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{lstkw}\bfseries,
+    stringstyle=\color{lststr},
+    commentstyle=\color{lstcom}\itshape,
+    numbers=left,
+    numberstyle=\tiny\color{black!50},
+    numbersep=8pt,
+    showstringspaces=false,
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=4,
+    frame=single,
+    framerule=0.3pt,
+    rulecolor=\color{black!30},
+    captionpos=b,
+    xleftmargin=10pt,
+    xrightmargin=4pt,
+    aboveskip=0.6em,
+    belowskip=0.6em,
+}
+\lstset{style=pythonstyle}
+
+% Shell snippets reuse the same frame but keep the default lexer.
+\lstdefinestyle{shellstyle}{
+    language=bash,
+    backgroundcolor=\color{lstbg},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{lstkw}\bfseries,
+    commentstyle=\color{lstcom}\itshape,
+    numbers=none,
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    framerule=0.3pt,
+    rulecolor=\color{black!30},
+    xleftmargin=10pt,
+    xrightmargin=4pt,
+}
+
+% Convenience commands for frequently used objects.
+\newcommand{\file}[1]{\texttt{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\param}[1]{\ensuremath{#1}}
+\newcommand{\Surprise}{\mathcal{S}}
+\newcommand{\Adj}{\mathbf{A}}
+\newcommand{\Modularity}{Q}
+\newcommand{\Conductance}{\phi}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{example}{Example}[section]
+
+\setlist{itemsep=2pt,topsep=4pt}

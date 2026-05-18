@@ -1,0 +1,10 @@
+$pdf_mode = 1;
+$pdflatex = 'pdflatex -interaction=nonstopmode -halt-on-error -synctex=1 %O %S';
+$biber = 'biber %O %S';
+$bibtex_use = 2;
+
+# Force biber for biblatex.
+$out_dir = '.';
+
+# Clean targets so 'latexmk -C' removes biber/biblatex byproducts too.
+$clean_ext = "synctex.gz bbl run.xml";

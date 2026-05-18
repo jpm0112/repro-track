@@ -1,0 +1,25 @@
+\documentclass[11pt,a4paper]{article}
+
+\input{preamble}
+
+\title{An EM-LLM Reader's Companion\\[0.4em]
+  \large Concepts, Code, and Reproduction Notes for the Fountas et al.\ (2025) Episodic Memory LLM}
+\author{Juan Pablo Morande}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This companion walks through \emph{Human-Inspired Episodic Memory for Infinite Context LLMs} by \textcite{fountas2025emllm}, paired with a function-level guide to the implementation that ships with the paper and the wrappers that drive the NeurIPS 2026 MLRC reproduction in this repository. The first part rebuilds the paper's reasoning in plain language with worked examples, equations, and references back to specific paper sections. The second part traces the code path from token to attention output across \file{em\_llm/}, the benchmark harness, and the reproduction scripts. The document is meant to be read alongside the paper PDF and a code editor open on \file{em-llm-model/}, not as a replacement for either.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\input{sections/00_preface}
+
+\printbibliography
+
+\end{document}
