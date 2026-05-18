@@ -28,7 +28,12 @@ else
     conda env create -f "$ENV_FILE"
 fi
 
+# Conda's activation hooks (e.g. libblas_mkl_activate.sh) reference unset
+# vars like MKL_INTERFACE_LAYER, which trips `set -u`. Relax nounset for the
+# activate call and re-enable it afterwards.
+set +u
 conda activate emllm
+set -u
 
 # Install upstream-pinned deps and the em_llm package in editable mode.
 # This installs from inside em-llm-model/ which means the bundled
