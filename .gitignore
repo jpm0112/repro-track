@@ -62,3 +62,4 @@ manuscript/**/build/
 # Local overrides
 .env.local
 *.local.env
+docs/asax_lessons_learned.md
