@@ -1,0 +1,39 @@
+\section{Background and problem statement}
+\label{sec:background}
+
+This chapter establishes the two intellectual halves the rest of the paper rests on. The first is the machine-learning side: why long-context transformers are difficult, and which strands of prior work EM-LLM borrows from. The second is the cognitive-science side: a compact tour of the human-memory ideas the authors translate into algorithms. Readers comfortable with either half can skim it and pick the rest up in context.
+
+\subsection{Why long context is hard}
+\label{sec:why-long-context}
+
+There are three concrete obstacles that recur across the long-context literature, and each maps onto a design choice EM-LLM makes later.
+
+The first obstacle is positional encoding. Transformer attention has no built-in notion of order, so positions are injected through additive embeddings (the original setup of \textcite{vaswani2017attention}), through relative-position biases, or through rotational encodings like RoPE. The trouble is that none of these schemes extrapolate gracefully past the lengths seen at training time. \textcite{kazemnejad2024impact} compare the dominant variants and show that out-of-distribution position indices degrade attention quality even when the model has the FLOPs to process the longer input. EM-LLM sidesteps this by assigning retrieved tokens a fixed position embedding, following the approach of \textcite{xiao2024infllm}, rather than asking the LLM to reason about positions tens of millions of tokens deep.
+
+The second obstacle is computational cost. Softmax attention is quadratic in sequence length, which makes brute-force long-context inference impractical past roughly $10^5$ tokens on commodity hardware. The paper does not try to speed up the underlying attention; it instead changes what gets attended to. The local window is processed with full softmax, and everything older is summarised into events that are paged in selectively. The effective per-step cost is dominated by the size of the local window plus the size of the retrieved buffer, not by the total sequence length.
+
+The third obstacle is more subtle and motivates the cognitive framing. When a query attends over a long context, the resulting weighted sum of value vectors becomes a low-distinctiveness average. The longer the window, the more values get summed, and the more the output looks like an undifferentiated mean. \textcite{liu2024lostmiddle} document this effect empirically as the lost-in-the-middle pattern: performance is higher when the relevant information sits at the beginning or end of the context than when it sits in the middle. EM-LLM's response is to never attend to all of history at once. Each layer attends to the local window plus a small number of retrieved events, and the rest is invisible to the softmax for that step.
+
+\subsection{Episodic memory in the human brain}
+\label{sec:episodic}
+
+The cognitive-science vocabulary in the paper is consistent across a handful of foundational references. The shortest path through them runs as follows.
+
+\paragraph{Episodic versus semantic memory.}
+\textcite{tulving1972episodic} drew the distinction that gives the paper its name. Episodic memory holds particular experiences anchored in time and place. Semantic memory holds generalised knowledge stripped of those anchors. A transformer's parameters are best read as semantic memory: facts and patterns abstracted away from any specific training example. EM-LLM adds a temporary episodic store on top, so that a long-context interaction can be treated as a stream of personal experiences the model can refer back to without changing its weights.
+
+\paragraph{Bayesian surprise as an event signal.}
+The mechanism the brain uses to chunk continuous experience into discrete events is not yet settled, but one durable proposal is that event boundaries fall at moments of high prediction error: the brain has a generative model of what should come next, and surprising input gets flagged as the start of something new \cite{zacks2007event}. \textcite{itti2009bayesian} formalised this idea by measuring surprise as the Kullback--Leibler divergence between the observer's prior and posterior beliefs, showing that this Bayesian definition predicts where humans actually look in natural images. \textcite{kumar2023neural} took the next step in the LLM setting, showing that an LLM's own next-token surprise on a podcast transcript lines up with where human listeners report the story shifting. EM-LLM picks up directly from this last result: the surprise it uses is exactly the negative log-likelihood that the base LLM already computes during inference.
+
+\paragraph{Free recall and the contiguity effect.}
+Human free recall is not a random walk through memory. \textcite{kahana1996contiguity} and the longer analysis by \textcite{howard2002contiguity} establish two robust regularities. First, items studied close together in time tend to be recalled close together (contiguity). Second, after recalling an item, the next item recalled is more often the one that originally followed it than the one that preceded it (forward asymmetry). These patterns hold across many list-learning paradigms and motivate EM-LLM's second retrieval buffer: when an event is fetched by similarity, its temporal neighbours are also brought into the context window so that the LLM can exploit any sequential structure those neighbours carry.
+
+\paragraph{Working memory and attention sinks.}
+\textcite{baddeley1992working} and \textcite{cowan2001focus} describe working memory as a small, attention-controlled subset of long-term memory that is held in active form to support the current task. In EM-LLM's architecture, the local context window plays that role: a few thousand recent tokens get the full softmax treatment, while everything older sits in episodic memory and is pulled in on demand. The 128 initial tokens at the start of the context behave differently, acting as attention sinks that stabilise the attention distribution in streaming inference \cite{xiao2024attsinks}. The cognitive analogy here is looser than the others; the authors are clear that the sinks are an engineering fix borrowed from prior work, not a cognitive postulate.
+
+\subsection{From cognition to algorithm}
+\label{sec:cognition-to-algorithm}
+
+The translation from these cognitive ideas to EM-LLM's machinery is more literal than is usual in brain-inspired ML, and that is part of what makes the paper readable. Surprise-based segmentation becomes a thresholding rule on the LLM's own negative log-likelihood (Section~\ref{sec:method-segmentation}). Boundary refinement becomes a graph-clustering pass on the attention-key similarity matrix, using modularity or conductance to enforce intra-event coherence (Section~\ref{sec:method-refinement}). The contiguity effect becomes a queue of temporal neighbours that runs alongside the similarity-based retrieval (Section~\ref{sec:method-retrieval}). Working memory becomes the local context window, and the attention sinks at position zero handle a numerical stability problem the cognitive framing does not need to explain.
+
+Each of these correspondences is a hypothesis the experiments then test. The agreement between LLM surprise and human-annotated event boundaries (Section~\ref{sec:human-alignment}) is the closest the paper gets to validating the cognitive framing on its own terms; everything else is judged on task performance.
