@@ -66,13 +66,19 @@ source activate emllm 2>/dev/null || conda activate emllm
 echo "=== conda env: $CONDA_DEFAULT_ENV ==="
 echo "=== python: $(which python) ==="
 
-# Prefer conda's newer libstdc++ over the system one loaded by the gcc
-# module. The cuda/11.8.0 module forces gcc back to 9.5.0_all, whose
-# libstdc++ lacks GLIBCXX_3.4.29 (needed by Pillow's libLerc, pulled in
-# by transformers). Without this, `import transformers` raises a
-# RuntimeError about the missing symbol.
+# Belt-and-suspenders for ASA's conda+module interaction: `conda activate`
+# updates CONDA_PREFIX correctly but doesn't reliably prepend the env's
+# bin/ to PATH when the anaconda module already loaded its own bin/ ahead
+# of it. Force both PATH and LD_LIBRARY_PATH to put the env first.
+#
+# LD_LIBRARY_PATH also picks up conda's newer libstdc++ over the system
+# one — the cuda/11.8.0 module pulls in gcc/9.5.0_all whose libstdc++
+# lacks GLIBCXX_3.4.29 (required by Pillow's libLerc, pulled in by
+# transformers); without this the import raises RuntimeError.
+export PATH="$CONDA_PREFIX/bin:$PATH"
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
-echo "=== LD_LIBRARY_PATH prefixed with: $CONDA_PREFIX/lib ==="
+echo "=== forced PATH+LD_LIBRARY_PATH to prefer $CONDA_PREFIX ==="
+echo "=== python now: $(which python) ==="
 
 echo "=== handing off to 02_run_longbench.sh (with -x trace) ==="
 # bash -x so the inner script's exec trace lands in our debug log too.
