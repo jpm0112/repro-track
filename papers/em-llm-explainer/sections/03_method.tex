@@ -86,6 +86,13 @@ With either metric in hand, the algorithm walks the candidate boundary list and 
   \label{alg:segmentation}
 \end{algorithm}
 
+\begin{figure}[h]
+\centering
+\input{figures/boundary_refinement}
+\caption{Refinement as a graph cut. Left: the key similarity matrix has two soft communities (positions 1--4 and 5--8) with a band of weak cross-cluster similarity in between. The surprise threshold marks position 4--5 as a candidate boundary. Right: modularity is evaluated at each candidate split position within a refinement window; the position that maximises $Q$ is the refined boundary.}
+\label{fig:boundary-refinement}
+\end{figure}
+
 \paragraph{Why it helps and what it costs.}
 The intuition is that surprise picks out the rough location of an event change but the precise location can sit one or two tokens to either side of the surprise spike. The refinement step lets the similarity structure of the keys speak. If $\alpha$ and $\beta$ are adjacent candidate boundaries, the algorithm searches positions strictly between them and picks the one whose induced split scores best under $f$. The complexity is $O(nm)$ where $n$ is the sequence length and $m$ is the chunk size used to process the sequence (Appendix C.1 of the paper); in practice $m$ is set so that the refinement cost is small compared with the cost of the attention itself. The paper reports modularity slightly outperforming conductance on the experimental tasks, but both improve over surprise alone.
 
@@ -99,6 +106,13 @@ For the current attention query, the system performs a $k$-nearest-neighbour loo
 
 \paragraph{Stage two: contiguity buffer.}
 When an event is retrieved by similarity, EM-LLM also enqueues its temporal neighbours, the events that originally fell within $\pm n$ positions in the source sequence (the paper uses $n = 1$ throughout). The contiguity buffer is a fixed-size queue of capacity $k_c$. When the queue fills, older or already-attended events are dequeued. This is the operational analogue of the contiguity effect from \cref{sec:episodic}: items studied close together in time should be available together at recall.
+
+\begin{figure}[h]
+\centering
+\input{figures/two_stage_retrieval}
+\caption{Two-stage retrieval for one generation step. The similarity buffer picks the $k_s$ events whose representative tokens best match the current query under dot-product similarity (solid green arrows). The contiguity buffer enqueues the temporal neighbours of those events (dashed orange arrows). Both feed into the per-layer attention.}
+\label{fig:two-stage-retrieval}
+\end{figure}
 
 \paragraph{Total context.}
 The total number of retrieved events at each step is $k = k_s + k_c$. The paper expresses experimental settings in tokens rather than events, so configurations like ``4k local + 4k retrieved'' refer to maximum token budgets. The split between similarity and contiguity is controlled by the contiguity ratio $k_r = k_c / k$. The paper sweeps $k_r \in \{0.3, 0.5, 0.7\}$ and reports $k_r = 0.3$ as a robust default; the similarity buffer dominates by token count, with the contiguity buffer playing a smaller, supplementary role.

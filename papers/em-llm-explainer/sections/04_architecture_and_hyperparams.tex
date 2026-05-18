@@ -14,6 +14,13 @@ The first 128 token positions are held fixed across the entire run. They are not
 \paragraph{Local context.}
 The local context holds the most recent tokens that fit inside the underlying LLM's training window (typically 4K). Within this window the model runs full softmax attention with no modification. This is the part of EM-LLM that behaves like an unaltered transformer, and it carries the analogy to working memory: a small, attention-controlled buffer that holds whatever is needed for the immediate task \cite{baddeley1992working,cowan2001focus}.
 
+\begin{figure}[h]
+\centering
+\input{figures/context_layout}
+\caption{The effective context at one generation step, in four regions. The local context behaves like an unmodified transformer window; the two retrieval buffers paginate the episodic store into the LLM's view; the initial-token sinks stabilise attention. Each layer re-runs retrieval, so different layers can attend to different events.}
+\label{fig:context-layout}
+\end{figure}
+
 \paragraph{Evicted tokens (episodic memory).}
 Everything older than the local context lives in the episodic store. These tokens are organised into events by the segmentation and refinement steps of \cref{sec:method}. The events are kept in a KV cache that can stay on GPU, spill to CPU, or be paged to disk depending on memory pressure (the \file{ContextManager} class, walked through in \cref{sec:walkthrough}). At each generation step, the similarity buffer and the contiguity buffer load a subset of these events back into the LLM's effective context for that step alone; events not retrieved are invisible to the softmax during that step but are not deleted.
 

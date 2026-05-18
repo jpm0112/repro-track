@@ -1,0 +1,35 @@
+% The four regions that make up the effective context at one generation step.
+% Used in Chapter 4 (architecture) and referenced from Chapter 8 (walkthrough).
+
+\begin{tikzpicture}[
+  font=\footnotesize,
+  region/.style={draw, minimum height=1.0cm, align=center, inner sep=3pt},
+  sink/.style={region, fill=blue!8, minimum width=1.3cm},
+  contig/.style={region, fill=orange!12, minimum width=2.2cm},
+  sim/.style={region, fill=green!12, minimum width=2.8cm},
+  local/.style={region, fill=gray!10, minimum width=3.0cm},
+  arrow/.style={->, >=stealth, thick},
+  label/.style={font=\scriptsize\itshape, text=black!60},
+]
+
+% The four regions, left to right.
+\node[sink]   (sinks)  {Initial\\sinks\\(128 tokens)};
+\node[contig] (cb) [right=0.15cm of sinks] {Contiguity buffer\\$k_c$ events};
+\node[sim]    (sb) [right=0.15cm of cb]    {Similarity buffer\\$k_s$ events};
+\node[local]  (lc) [right=0.15cm of sb]    {Local context\\$n_l$ tokens (full softmax)};
+
+% Above-label: what cognitively-styled role each region plays.
+\node[label, above=0.15cm of sinks] {streaming sink};
+\node[label, above=0.15cm of cb]    {temporal neighbours};
+\node[label, above=0.15cm of sb]    {$k$-NN retrieval};
+\node[label, above=0.15cm of lc]    {working memory};
+
+% Below brace and arrow indicating the LLM forward consumes the union.
+\draw[decorate, decoration={brace, mirror, amplitude=4pt}, thick]
+  (sinks.south west) -- (lc.south east)
+  node[midway, below=8pt, font=\footnotesize] (brace) {effective context attended at every layer};
+
+\node[below=0.7cm of brace, font=\footnotesize] (attn) {Per-layer attention $\rightarrow$ next-token logits};
+\draw[arrow] (brace) -- (attn);
+
+\end{tikzpicture}

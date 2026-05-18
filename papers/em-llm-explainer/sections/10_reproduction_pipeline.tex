@@ -87,7 +87,7 @@ For the long $\infty$-Bench tasks and the extended-passkey experiment, the RTX 3
   \code{model.min\_free\_cpu\_memory} & 100 GB & 8 GB & The default exceeds the 32 GB the box has; allocating CPU cache at 100 GB OOMs immediately. \\
   \code{model.disk\_offload\_threshold} & 300{,}000 & 200{,}000 & Trigger disk offload earlier to keep the CPU footprint small. \\
   \code{model.vector\_offload\_threshold} & 50{,}000 & 30{,}000 & Move representative-token tensors to CPU sooner. \\
-  \code{model.disk\_offload\_dir} & \texttt{./offload\_data} & \texttt{\$EMLLM\_OFFLOAD\_DIR} & Keep the upstream tree clean; route to a wrapper-controlled path. \\
+  \code{model.disk\_offload\_dir} & \code{./offload\_data} & \code{\$EMLLM\_OFFLOAD\_DIR} & Keep the upstream tree clean; route to a wrapper-controlled path. \\
   \bottomrule
 \end{tabular}
 \caption{RTX-3090 overrides documented in \file{docs/hardware\_adaptations.md}. None of these change numerical results; they only change where event data is staged in the memory hierarchy.}

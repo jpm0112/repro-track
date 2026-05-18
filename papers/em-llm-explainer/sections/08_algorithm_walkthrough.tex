@@ -44,6 +44,13 @@ This file holds two top-level functions. The first, \code{em\_llm\_attn\_forward
 \end{enumerate}
 The pattern is the same one Hugging Face uses for its own attention modules. Local and global $Q$, $K$, $V$ are initialised as the same tensors here; the split between local and global tokens happens inside the \code{ContextManager}.
 
+\begin{figure}[h]
+\centering
+\input{figures/inference_loop}
+\caption{Data flow for one generation step in EM-LLM. The LM head produces logits; surprise is computed from those logits; if surprise exceeds the moving threshold, refinement runs and the episodic memory absorbs a new block boundary; in parallel, the two-stage retrieval pulls events back into per-layer attention.}
+\label{fig:inference-loop}
+\end{figure}
+
 \paragraph{\code{em\_llm\_causal\_lm\_forward}} (\file{em\_llm.py:112}--\file{em\_llm.py:277}). This function is mounted as \code{model.forward} for the wrapped LLM. The most consequential block is the surprise computation followed by similarity-based boundary refinement.
 
 \begin{lstlisting}[caption={Surprise computation. \file{em\_llm/attention/em\_llm.py:197}--\file{em\_llm.py:205}.},captionpos=b]

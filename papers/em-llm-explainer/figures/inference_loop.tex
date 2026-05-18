@@ -1,0 +1,50 @@
+% Inference-time data flow for one generation step in EM-LLM.
+% Used in Chapter 8 (algorithm walkthrough).
+
+\begin{tikzpicture}[
+  font=\scriptsize,
+  node distance=0.45cm,
+  block/.style={draw, rounded corners=2pt, minimum width=2.2cm, minimum height=0.6cm, align=center, inner sep=2pt},
+  io/.style={draw, fill=gray!10, rounded corners=4pt, minimum width=1.3cm, minimum height=0.5cm},
+  decide/.style={draw, diamond, aspect=2, inner sep=1pt, align=center, minimum width=2.0cm},
+  store/.style={draw, fill=orange!10, minimum width=2.0cm, minimum height=0.6cm, align=center},
+  arrow/.style={->, >=stealth, thick},
+]
+
+\node[io] (in) {token in};
+\node[block, right=of in] (proj) {$Q,K,V$ projections\\(per layer)};
+\node[block, right=of proj] (lmh) {LM head $\to$ logits};
+\node[block, below=of lmh] (sur) {surprise $\Surprise(x_t)$};
+\node[decide, below=of sur] (thr) {$\Surprise > T_t$?};
+
+% Right branch: refinement + memory update.
+\node[block, right=1.8cm of thr] (ref) {graph refinement\\(modularity / conductance)};
+\node[store, below=of ref] (mem) {episodic memory\\(new block boundary)};
+
+% Left branch: retrieval into attention.
+\node[block, below=of thr] (retr) {two-stage retrieval\\(similarity + contiguity)};
+\node[block, left=of retr] (attn) {per-layer attention\\over union of regions};
+\node[io, below=of attn] (out) {token out};
+
+% Arrows.
+\draw[arrow] (in) -- (proj);
+\draw[arrow] (proj) -- (lmh);
+\draw[arrow] (lmh) -- (sur);
+\draw[arrow] (sur) -- (thr);
+
+\draw[arrow] (thr) -- node[above, font=\scriptsize] {yes} (ref);
+\draw[arrow] (ref) -- (mem);
+
+\draw[arrow] (thr) -- node[right, font=\scriptsize] {no} (retr);
+\draw[arrow] (retr) -- (attn);
+\draw[arrow] (attn) -- (out);
+
+% Memory feeds the retrieval step (dashed, indicating "read").
+\draw[->, >=stealth, dashed, orange!70!black]
+  (mem.south) |- ($(retr.east)+(0.0, 0.2)$) -- (retr.east);
+
+% Q from projections feeds retrieval (dashed).
+\draw[->, >=stealth, dashed, blue!50!black]
+  (proj.south) |- ($(retr.east)+(0.0, -0.2)$) -- (retr.east);
+
+\end{tikzpicture}
