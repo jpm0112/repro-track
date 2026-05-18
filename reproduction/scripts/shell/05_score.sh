@@ -15,4 +15,8 @@ DIR="${1:-}"
 
 cd "$EMLLM_ROOT"
 python benchmark/eval.py --dir_path "$(realpath "$DIR")"
-echo "[score] Done. result.json refreshed in $DIR"
+
+python "$REPRO_ROOT/reproduction/analysis/make_summary.py" "$(realpath "$DIR")" \
+    || echo "[summary] warning: summary generation failed; result.json is still valid"
+
+echo "[score] Done. result.json + summary.{md,csv} refreshed in $DIR"

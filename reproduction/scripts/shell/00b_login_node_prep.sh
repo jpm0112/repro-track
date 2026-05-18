@@ -26,8 +26,12 @@ DEFAULT_MODELS=(
 read -ra MODELS <<< "${MODELS:-${DEFAULT_MODELS[*]}}"
 
 for m in "${MODELS[@]}"; do
-    echo "[login-prep] Pre-fetching $m to $HF_HOME"
-    huggingface-cli download "$m" --cache-dir "$HF_HOME"
+    echo "[login-prep] Pre-fetching $m into \$HF_HOME/hub"
+    # No --cache-dir: huggingface-cli auto-routes into $HF_HOME/hub, which is
+    # exactly where transformers' from_pretrained() looks when
+    # TRANSFORMERS_OFFLINE=1 on compute nodes. Passing --cache-dir $HF_HOME
+    # would put weights one level too high and the compute job would 404.
+    huggingface-cli download "$m"
 done
 
 echo "[login-prep] Done. Compute jobs can now run with TRANSFORMERS_OFFLINE=1."

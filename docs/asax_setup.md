@@ -1,8 +1,12 @@
 # ASAX setup
 
-Quick reference for running this reproduction on the Alabama Supercomputer
-(ASAX). Assumes you already have an account, a `$SCRATCH` allocation, and
-SSH access to a login node.
+Quick reference for running this reproduction on ASAX (Alabama Supercomputer's
+Asax cluster). Assumes an account, a `$SCRATCH` allocation, and SSH access to
+a login node.
+
+ASAX uses ASA's `run_script` wrapper for submission and `qstat` for status —
+not raw `sbatch`. Resource specs (GPU count, walltime, memory) are passed to
+`run_script` at submit time, not as `#SBATCH` directives in the script.
 
 ## First-time login-node setup
 
@@ -10,19 +14,19 @@ SSH access to a login node.
 ssh <user>@<asax-login>      # check the ASA portal for current login hostname
 cd $SCRATCH
 
-# Clone — current working tree includes a vendored em-llm-model
-git clone https://github.com/<your-user>/repro-track.git
+# Clone — current working tree includes a vendored em-llm-model submodule
+git clone --recurse-submodules https://github.com/<your-user>/repro-track.git
 cd repro-track
 
 # Source the ASAX env (loads modules, sets paths)
 source reproduction/scripts/env/asax.env
 
 # Verify modules loaded
-which conda && which nvcc && nvidia-smi || echo "module load failed; check names"
+which conda && nvidia-smi || echo "module load failed; run `module avail anaconda cuda` and fix names"
 ```
 
-If `module load anaconda/2024.02 cuda/12.4 gcc/11.4` fails, run
-`module avail anaconda cuda gcc` and update the names in
+If `module load anaconda/3-2025.12 cuda/11.8.0` fails, run
+`module avail anaconda cuda` and update the names in
 `reproduction/scripts/env/asax.env` to whatever ASAX currently exposes.
 
 ## Create the conda env (login node)
@@ -31,20 +35,19 @@ If `module load anaconda/2024.02 cuda/12.4 gcc/11.4` fails, run
 bash reproduction/scripts/shell/00_env_setup.sh
 ```
 
-The env is created at the default conda location, which on ASAX often points
-into `$SCRATCH` already. If it lands in your home and you blow your home
-quota, recreate with an explicit prefix:
+The env defaults to wherever conda puts it. If that's your home directory and
+home runs out of quota, recreate with an explicit prefix on scratch:
 
 ```bash
 conda env remove -n emllm
 conda env create -f environment.asax.yml -p $SCRATCH/conda-envs/emllm
-conda activate $SCRATCH/conda-envs/emllm
+source activate $SCRATCH/conda-envs/emllm
 ```
 
 ## HuggingFace + dataset pre-download (login node only)
 
-Compute nodes do not have outbound internet. All HF model weights and ∞-Bench
-JSONL files must be downloaded from a login node first.
+Compute nodes do not have outbound internet. All HF model weights and
+Infinity-Bench JSONL files must be downloaded from a login node first.
 
 ```bash
 huggingface-cli login        # paste a token with read-only access
@@ -52,35 +55,51 @@ bash reproduction/scripts/shell/00b_login_node_prep.sh   # all 5 base models
 bash reproduction/scripts/shell/01_download_data.sh      # LongBench + ∞-Bench
 ```
 
-Downloaded sizes (approx): Mistral-7B 14 GB, Llama-3-8B 16 GB, Llama-3.1-8B
-16 GB, Phi-3-mini 7.6 GB, Phi-3.5-mini 7.6 GB, ∞-Bench JSONL ~15 GB.
+Mistral-7B-Instruct-v0.2 is gated — click "Agree and access" on its model
+page once before `00b_login_node_prep.sh` runs, or the download will 401.
+
+Approx sizes: Mistral-7B 14 GB, Llama-3-8B 16 GB, Llama-3.1-8B 16 GB,
+Phi-3-mini 7.6 GB, Phi-3.5-mini 7.6 GB, ∞-Bench JSONL ~15 GB.
 
 ## Submit reproduction jobs
 
+Each `.sh` payload below is a plain bash script. `run_script` reads it,
+prompts for resources, then submits it as a SLURM job under the hood.
+
 ```bash
-sbatch reproduction/scripts/slurm/longbench.sbatch
-sbatch reproduction/scripts/slurm/infinitebench.sbatch
-sbatch reproduction/scripts/slurm/passkey_10m.sbatch
+run_script reproduction/scripts/asax/longbench.sh
+run_script reproduction/scripts/asax/infinitebench.sh
+run_script reproduction/scripts/asax/passkey_10m.sh
 ```
 
-Override knobs without editing the sbatch file:
+Suggested answers to `run_script`'s prompts per job (adjust class names to
+whatever your allocation currently exposes):
+
+| Script | Class | GPUs | Walltime | Memory |
+|--------|-------|------|----------|--------|
+| `longbench.sh` | GPU-enabled (A100) | 1 | 12:00:00 | 128gb |
+| `infinitebench.sh` | GPU-enabled (A100) | 1 | 24:00:00 | 200gb |
+| `passkey_10m.sh` | GPU-enabled (A100) | 4 | 48:00:00 | 512gb |
+
+Override knobs without editing the script — pass env vars on the submit line:
 
 ```bash
-# Different model
-sbatch --export=ALL,MODEL=llama31 reproduction/scripts/slurm/longbench.sbatch
-
-# Different ∞-Bench dataset subset
-sbatch --export=ALL,DATASETS=kv_retrieval,longbook_qa_eng \
-       reproduction/scripts/slurm/infinitebench.sbatch
+MODEL=llama31 run_script reproduction/scripts/asax/longbench.sh
+DATASETS=kv_retrieval,longbook_qa_eng \
+    run_script reproduction/scripts/asax/infinitebench.sh
+EXTENDED_PASSKEY_K=1024 run_script reproduction/scripts/asax/passkey_10m.sh
 ```
 
 ## Checking progress
 
 ```bash
-squeue -u $USER
-sacct -j <jobid> --format=JobID,State,Elapsed,MaxRSS,ReqMem
-tail -f reproduction/results/asax/logs/longbench-<jobid>.out
+qstat -u $USER
+tail -f reproduction/results/asax/logs/longbench-*.log
 ```
+
+Each `.sh` also tees its full stdout/stderr to a timestamped file under
+`reproduction/results/asax/logs/` so log location is predictable regardless
+of how `run_script` captures its own output.
 
 ## Common gotchas
 
@@ -88,17 +107,21 @@ tail -f reproduction/results/asax/logs/longbench-<jobid>.out
   to `$SCRATCH`. Default `asax.env` already does this.
 - **`scripts/download.sh` fails with "no internet".** You ran it on a compute
   node by accident. Run it from a login node only.
-- **Job killed by OOM.** The default `--mem` in sbatch may be too low for
-  long-context tasks. Bump `#SBATCH --mem=...` in the relevant `.sbatch` and
-  resubmit. The 10M-passkey sbatch already requests 512 GB.
-- **`module: command not found` inside sbatch.** Some ASA partitions ship a
-  bare shell. Add `source /etc/profile` at the top of the sbatch before the
-  `source reproduction/scripts/env/asax.env`.
+- **Job killed by OOM.** Memory request in `run_script` was too low for the
+  long-context task. Resubmit with a higher `memory:` answer; 200gb is
+  usually enough for ∞-Bench, 512gb for the 10M passkey.
+- **`module: command not found` inside the job.** ASAX's dynamic profile
+  wasn't sourced. The `asax.env` does this with
+  `source /apps/profiles/modules_asax.sh.dyn`; if that path moved after a
+  maintenance window, find the new one with `ls /apps/profiles/`.
+- **`source activate emllm` fails with "not found".** The conda env wasn't
+  created under the default name. Either run `00_env_setup.sh` first, or
+  point at the explicit prefix: `source activate $SCRATCH/conda-envs/emllm`.
 
 ## When the run finishes
 
 Results land in `reproduction/results/asax/<benchmark>/<model>/result.json`.
-Pull them back to local for analysis with:
+Pull them back to the local workstation for analysis with:
 
 ```bash
 rsync -av <user>@<asax-login>:$SCRATCH/repro-track/reproduction/results/asax/ \

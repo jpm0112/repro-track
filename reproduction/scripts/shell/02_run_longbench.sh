@@ -5,11 +5,18 @@
 #
 # Knobs (env vars):
 #   MODEL                  one of mistral|llama3|llama31|phi3_mini|phi35_mini
-#   DATASETS               comma-separated subset; defaults to upstream's full LongBench list
-#   ALLOW_DISK_OFFLOAD     True|False; default False (LongBench fits without offload)
-#   EXTRA_OVERRIDES        extra OmegaConf CLI args appended verbatim
+#   VARIANT                paper EM-LLM variant tag (s|sm|s_c|sm_c). Defaults to
+#                            the paper Table 2 variant for the model
+#                            (mistral=sm_c, llama31=sm, others=s). Set
+#                            VARIANT=s explicitly to reproduce Table 1's row
+#                            for LLaMA-3.1.
+#   DATASETS               comma-separated subset; defaults to upstream's full
+#                            English LongBench list (15 tasks)
+#   ALLOW_DISK_OFFLOAD     True|False; default False (LongBench fits without)
+#   EXTRA_OVERRIDES        extra OmegaConf CLI args; appended AFTER the
+#                            paper-variant overrides (so user wins)
 #
-# Pre-req: source reproduction/scripts/env/<system>.env, then
+# Pre-req: source reproduction/scripts/env/<system>.env then
 #          conda activate emllm.
 
 set -euo pipefail
@@ -22,7 +29,15 @@ DATASETS="${DATASETS:-2wikimqa,gov_report,hotpotqa,lcc,multi_news,multifieldqa_e
 ALLOW_DISK_OFFLOAD="${ALLOW_DISK_OFFLOAD:-False}"
 EXTRA_OVERRIDES="${EXTRA_OVERRIDES:-}"
 
-OUT_DIR="$RESULTS_ROOT/longbench/$MODEL"
+# Resolve paper-faithful variant overrides (sets VARIANT, VARIANT_OVERRIDES,
+# MODEL_GAMMA_OVERRIDE). Pass through any user-supplied VARIANT.
+# shellcheck disable=SC1091
+source "$REPRO_ROOT/reproduction/scripts/shell/_paper_variants.sh"
+resolve_paper_variant "$MODEL" "${VARIANT:-}"
+
+# Output dir includes variant tag so different variants for the same model do
+# not overwrite each other.
+OUT_DIR="$RESULTS_ROOT/longbench/${MODEL}_${VARIANT}"
 mkdir -p "$OUT_DIR"
 
 cd "$EMLLM_ROOT"
@@ -34,7 +49,15 @@ python benchmark/pred.py \
     --rank 0 \
     --allow_disk_offload "$ALLOW_DISK_OFFLOAD" \
     model.disk_offload_dir="$EMLLM_OFFLOAD_DIR" \
+    ${VARIANT_OVERRIDES} \
+    ${MODEL_GAMMA_OVERRIDE} \
     ${EXTRA_OVERRIDES}
 
 python benchmark/eval.py --dir_path "$OUT_DIR"
+
+# Paper-mirroring side-by-side summary (soft-fail to never block the run).
+python "$REPRO_ROOT/reproduction/analysis/make_summary.py" "$OUT_DIR" \
+    || echo "[summary] warning: summary generation failed; result.json is still valid"
+
 echo "[longbench] Done. Results: $OUT_DIR/result.json"
+echo "[longbench] Side-by-side: $OUT_DIR/summary.md"

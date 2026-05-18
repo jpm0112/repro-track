@@ -39,4 +39,17 @@ pip install --upgrade pip
 pip install -r requirements.txt
 pip install -e .
 
+# Optional: install InfLLM into the same env if the sibling checkout is
+# populated (docs/infllm_setup.md). InfLLM's deps overlap with EM-LLM's, so
+# resolving against the same env is fine. Skipped silently if not present.
+if [[ -d "$REPRO_ROOT/infllm-model" && -f "$REPRO_ROOT/infllm-model/setup.py" ]]; then
+    echo "[setup] Found populated infllm-model/, installing into emllm env"
+    cd "$REPRO_ROOT/infllm-model"
+    [[ -f requirements.txt ]] && pip install -r requirements.txt
+    pip install -e .
+    cd "$REPRO_ROOT"
+else
+    echo "[setup] infllm-model/ not populated; skipping InfLLM install. See docs/infllm_setup.md."
+fi
+
 echo "[setup] Done. Activate with: conda activate emllm"

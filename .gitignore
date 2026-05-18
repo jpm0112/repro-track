@@ -11,11 +11,11 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
-# Conda / venv
+# Conda / venv (anchored to repo root so reproduction/scripts/env/ stays tracked)
 .conda/
 .venv/
-env/
-venv/
+/env/
+/venv/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -46,6 +46,9 @@ reproduction/results/**/offload_data/
 em-llm-model/benchmark/data/
 em-llm-model/benchmark/results/
 em-llm-model/offload_data/
+infllm-model/benchmark/data/
+infllm-model/benchmark/results/
+infllm-model/offload_data/
 
 # Manuscript build artefacts
 manuscript/**/*.aux

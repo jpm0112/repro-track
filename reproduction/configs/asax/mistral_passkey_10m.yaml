@@ -2,7 +2,7 @@
 #
 # Mostly upstream defaults — the only adaptation is rebinding the disk offload
 # directory to per-job scratch. Multi-GPU layer split is auto-triggered by
-# pred.py when torch.cuda.device_count() > 1 (the sbatch requests 4 A100s).
+# pred.py when torch.cuda.device_count() > 1 (request 4 A100s in run_script).
 #
 # Apply via:
 #   EXTENDED_PASSKEY_K=10240 \
@@ -12,6 +12,6 @@ extended_passkey: 10240   # in 1000s of tokens → 10.24M
 
 model:
   # disk_offload_dir is set by the wrapper from $EMLLM_OFFLOAD_DIR, which
-  # asax.env points at $SCRATCH/emllm_offload/$SLURM_JOB_ID. No further
+  # asax.env points at $SCRATCH/emllm_offload/<scheduler-job-id>. No further
   # overrides needed.
   {}
