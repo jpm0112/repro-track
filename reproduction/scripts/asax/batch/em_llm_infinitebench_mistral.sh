@@ -10,4 +10,7 @@ source "$REPO_ROOT/reproduction/scripts/asax/_asax_job_setup.sh"
 
 export MODEL=mistral
 export VARIANT=sm_c
+# ASA gpu queue caps at 120gb RAM (vs paper's ~200gb usage on long ∞-Bench
+# tasks). Force disk offload sooner so the long contexts don't OOM the host.
+export EXTRA_OVERRIDES="model.min_free_cpu_memory=8 model.disk_offload_threshold=100000 model.vector_offload_threshold=30000"
 exec bash "$REPO_ROOT/reproduction/scripts/shell/03_run_infinitebench.sh"

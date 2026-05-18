@@ -10,4 +10,5 @@ source "$REPO_ROOT/reproduction/scripts/asax/_asax_job_setup.sh"
 
 export MODEL=llama31
 export VARIANT=sm
+export EXTRA_OVERRIDES="model.min_free_cpu_memory=8 model.disk_offload_threshold=100000 model.vector_offload_threshold=30000"
 exec bash "$REPO_ROOT/reproduction/scripts/shell/03_run_infinitebench.sh"

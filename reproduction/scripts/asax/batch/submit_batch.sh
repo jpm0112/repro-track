@@ -21,18 +21,21 @@ BATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Per-wrapper resource specs. Keep in sync with paper_reproduction_runbook.md.
 # Format: walltime ncpus mem gpus
 declare -A RESOURCES=(
-    [em_llm_longbench_mistral]="14:00:00 8 128gb 1"
-    [em_llm_longbench_llama3]="14:00:00 8 128gb 1"
-    [em_llm_longbench_llama31_sm]="14:00:00 8 128gb 1"
-    [em_llm_longbench_llama31_s]="14:00:00 8 128gb 1"
-    [em_llm_longbench_phi3_mini]="14:00:00 8 128gb 1"
-    [em_llm_longbench_phi35_mini]="14:00:00 8 128gb 1"
-    [em_llm_infinitebench_mistral]="26:00:00 8 200gb 1"
-    [em_llm_infinitebench_llama3]="26:00:00 8 200gb 1"
-    [em_llm_infinitebench_llama31_sm]="26:00:00 8 200gb 1"
-    [em_llm_infinitebench_llama31_s]="26:00:00 8 200gb 1"
-    [em_llm_passkey_1m_mistral]="26:00:00 8 64gb 1"
-    [em_llm_passkey_10m_mistral]="48:00:00 16 512gb 4"
+    [em_llm_longbench_mistral]="14:00:00 4 120gb 1"
+    [em_llm_longbench_llama3]="14:00:00 4 120gb 1"
+    [em_llm_longbench_llama31_sm]="14:00:00 4 120gb 1"
+    [em_llm_longbench_llama31_s]="14:00:00 4 120gb 1"
+    [em_llm_longbench_phi3_mini]="14:00:00 4 120gb 1"
+    [em_llm_longbench_phi35_mini]="14:00:00 4 120gb 1"
+    [em_llm_infinitebench_mistral]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_llama3]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_llama31_sm]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_llama31_s]="26:00:00 4 120gb 1"
+    [em_llm_passkey_1m_mistral]="26:00:00 4 64gb 1"
+    # passkey_10m needs more than the gpu queue's 120gb cap and 4 GPUs;
+    # do NOT include unattended. Submit separately once allocated extra
+    # resources (contact hpc@asc.edu).
+    [em_llm_passkey_10m_mistral]="48:00:00 16 120gb 4"
 )
 
 DRY=""
