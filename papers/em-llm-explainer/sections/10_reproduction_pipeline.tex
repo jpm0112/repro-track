@@ -1,0 +1,118 @@
+\section{Reproduction pipeline: \texttt{reproduction/}}
+\label{sec:repro-pipeline}
+
+The reproduction's scripts are designed around two principles: never edit \file{em-llm-model/}, and let every per-system difference flow through OmegaConf overrides rather than through forked code. This chapter walks the layers from env files at the bottom to the analysis scripts at the top, showing where each component fits into the run flow described in \cref{sec:wrappers-configs}.
+
+\subsection{Environment files: \file{reproduction/scripts/env/}}
+\label{sec:repro-env}
+
+Two files, \file{local.env} and \file{asax.env}, sourced once per shell session before any wrapper runs. They export the variables the rest of the pipeline depends on. The local-backend version sets:
+\begin{itemize}
+  \item \code{REPRO\_SYSTEM=local} and \code{REPRO\_ROOT} (defaults to \texttt{\$HOME/repro-track}).
+  \item \code{EMLLM\_ROOT} and \code{INFLLM\_ROOT}, the paths to the two vendored upstream repos.
+  \item \code{HF\_HOME}, \code{TRANSFORMERS\_CACHE} for the Hugging Face cache.
+  \item \code{EMLLM\_OFFLOAD\_DIR} for the scratch directory where event data spills to disk; defaults to \texttt{/tmp/emllm\_offload} on local.
+  \item \code{RESULTS\_ROOT} for the per-system output sink.
+  \item \code{PYTORCH\_CUDA\_ALLOC\_CONF=expandable\_segments:True} to avoid CUDA fragmentation on long-context allocations.
+\end{itemize}
+The ASA-X version differs in two places: it routes \code{EMLLM\_OFFLOAD\_DIR} to a per-job path on the cluster's scratch filesystem ($\texttt{\$SCRATCH/emllm\_offload/\$SLURM\_JOB\_ID}$), and it leaves conda activation to the wrappers because ASA-X's module system is intolerant of double-activation.
+
+\subsection{Shell wrappers: \file{reproduction/scripts/shell/}}
+\label{sec:repro-shell}
+
+The numbered wrappers were enumerated in \cref{tab:shell-wrappers}. The two scripts worth walking in detail are \file{02\_run\_longbench.sh} (the main EM-LLM entry) and \file{05\_score.sh} (the aggregation step).
+
+\paragraph{\file{02\_run\_longbench.sh}.} The script reads four environment variables: \code{MODEL} (default \code{mistral}), \code{VARIANT} (defaults from the paper-variants table below), \code{DATASETS} (the LongBench task list), and \code{ALLOW\_DISK\_OFFLOAD}. It sources \file{\_paper\_variants.sh} to resolve the model's paper-faithful variant into the right OmegaConf override string (\code{VARIANT\_OVERRIDES}, \code{MODEL\_GAMMA\_OVERRIDE}), then calls:
+
+\begin{lstlisting}[style=shellstyle,basicstyle=\ttfamily\footnotesize]
+python benchmark/pred.py \
+    --config_path "config/${MODEL}.yaml" \
+    --output_dir_path "$OUT_DIR" \
+    --datasets "$DATASETS" \
+    --world_size 1 \
+    --rank 0 \
+    --allow_disk_offload "$ALLOW_DISK_OFFLOAD" \
+    model.disk_offload_dir="$EMLLM_OFFLOAD_DIR" \
+    ${VARIANT_OVERRIDES} \
+    ${MODEL_GAMMA_OVERRIDE} \
+    ${EXTRA_OVERRIDES}
+\end{lstlisting}
+The upstream config under \file{em-llm-model/benchmark/config/} is the source of truth; the override string is the only place reproduction-specific values appear. The output directory pattern is \code{\$RESULTS\_ROOT/longbench/\$\{MODEL\}\_\$\{VARIANT\}/}, with the variant tag so SM+C and S runs of the same model do not collide.
+
+After \file{pred.py} returns, the script calls \file{eval.py} on the output directory and \file{reproduction/analysis/make\_summary.py} for the side-by-side paper-versus-ours summary. The summary step has a soft-fail wrapper so a broken summariser never invalidates a successful run.
+
+\paragraph{\file{\_paper\_variants.sh}.} A sourced library that maps model names to paper-faithful variant tags. The table below summarises its content; the script itself is in \file{reproduction/scripts/shell/\_paper\_variants.sh}.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{2.3cm}cl}
+  \toprule
+  Model & Paper variant & $\gamma$ & OmegaConf overrides \\
+  \midrule
+  Mistral-v0.2 & SM+C & 1 & \code{similarity\_refinement=true}, \code{use\_contiguity\_buffer=true} \\
+  LLaMA-3-8B & S & 2 & \code{surprisal\_threshold\_gamma=2} \\
+  LLaMA-3.1-8B & SM & 1 & \code{similarity\_refinement=true} \\
+  Phi-3-mini & S & 1 & none (matches upstream default) \\
+  Phi-3.5-mini & S & 1 & none (matches upstream default) \\
+  \bottomrule
+\end{tabular}
+\caption{Paper-faithful EM-LLM variants per model, as encoded in \file{\_paper\_variants.sh}. The Phi family inherits upstream defaults exactly; the others need at least one override.}
+\label{tab:paper-variants}
+\end{table}
+
+LLaMA-3.1 is also run under variant S to reproduce the per-task numbers in paper Table~1 (the 51.58\% LongBench score that the introduction quotes); see \file{docs/paper\_reproduction\_runbook.md} for that command.
+
+\paragraph{\file{\_infllm\_budgets.sh}.} The analogous library for the InfLLM baseline runs in \file{06\_run\_infllm\_longbench.sh} and \file{07\_run\_infllm\_infinitebench.sh}. It encodes the local-plus-retrieved budget pairs that match the paper's Table~2 row for each model (4k+2k for Mistral, 4k+4k for the LLaMA-3 family, 1k+3k for Phi).
+
+\subsection{Configs: \file{reproduction/configs/}}
+\label{sec:repro-configs}
+
+Two subdirectories, \file{local/} and \file{asax/}, holding YAMLs that override the upstream defaults per backend. The configs are intentionally minimal. The local Mistral $\times$ LongBench config, for instance, contains exactly an empty \code{model:} block (\file{reproduction/configs/local/mistral\_longbench.yaml}), because LongBench's maximum context length (around 200K tokens) does not trigger the CPU-offload path on the RTX 3090 and so needs no overrides.
+
+The ASA-X variants are similarly thin. The only ASA-X override applied uniformly is \code{model.disk\_offload\_dir=\$SCRATCH/emllm\_offload/\$SLURM\_JOB\_ID}, because the cluster's scratch filesystem requires a per-job path. \file{docs/hardware\_adaptations.md} enumerates the full set of overrides and the reasoning behind each.
+
+\subsection{Hardware overrides for the local backend}
+\label{sec:repro-hardware}
+
+For the long $\infty$-Bench tasks and the extended-passkey experiment, the RTX 3090 box (32 GB RAM) needs four overrides that do not appear in the paper or the upstream config:
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{4.6cm}p{2cm}p{2cm}>{\raggedright\arraybackslash}p{5cm}}
+  \toprule
+  Field & Upstream default & Local value & Reason \\
+  \midrule
+  \code{model.min\_free\_cpu\_memory} & 100 GB & 8 GB & The default exceeds the 32 GB the box has; allocating CPU cache at 100 GB OOMs immediately. \\
+  \code{model.disk\_offload\_threshold} & 300{,}000 & 200{,}000 & Trigger disk offload earlier to keep the CPU footprint small. \\
+  \code{model.vector\_offload\_threshold} & 50{,}000 & 30{,}000 & Move representative-token tensors to CPU sooner. \\
+  \code{model.disk\_offload\_dir} & \texttt{./offload\_data} & \texttt{\$EMLLM\_OFFLOAD\_DIR} & Keep the upstream tree clean; route to a wrapper-controlled path. \\
+  \bottomrule
+\end{tabular}
+\caption{RTX-3090 overrides documented in \file{docs/hardware\_adaptations.md}. None of these change numerical results; they only change where event data is staged in the memory hierarchy.}
+\label{tab:hardware-overrides}
+\end{table}
+
+The invariant the reproduction maintains, stated explicitly in \file{docs/hardware\_adaptations.md}, is that hardware overrides should not change numerical outputs. Throughput differs, OOM behaviour differs, but the predictions written to JSONL should match those produced on a larger machine that does not need the overrides at all. The ASA-X backend is the high-fidelity execution path; the local backend exists to verify that on hardware the average reviewer can actually access.
+
+\subsection{ASA-X payloads: \file{reproduction/scripts/asax/}}
+\label{sec:repro-asax}
+
+The ASA-X-only directory holds the scripts that get submitted through ASA's \code{run\_script} wrapper. Each per-benchmark script (\file{longbench.sh}, \file{infinitebench.sh}, \file{passkey\_10m.sh}, plus InfLLM siblings) sources \file{\_asax\_job\_setup.sh} for the shared preamble: module loading, conda activation, PATH ordering, and a CUDA-visible-devices cap. The shared preamble is the file that exists because the cluster's module system has a habit of preferring its own \code{libstdc++} over conda's; \file{docs/asax\_lessons\_learned.md} records why each line is there.
+
+The per-benchmark wrappers then call the corresponding numbered shell wrapper. There is no duplication of logic between \file{reproduction/scripts/shell/} and \file{reproduction/scripts/asax/}; the ASA-X version is just an envelope that handles the cluster's quirks before delegating.
+
+A small batch directory under \file{reproduction/scripts/asax/batch/} carries one script per ($\text{model}, \text{benchmark}, \text{variant}$) combination, plus a \file{submit\_batch.sh} aggregator. This is the entry point for running the full 20-job reproduction matrix.
+
+\subsection{Outputs and analysis: \file{reproduction/results/}, \file{reproduction/analysis/}}
+\label{sec:repro-outputs}
+
+Prediction outputs land at \file{\$RESULTS\_ROOT/<benchmark>/<model>\_<variant>/} for EM-LLM and \file{\$RESULTS\_ROOT/<benchmark>\_infllm/<model>\_<budget>/} for InfLLM. Each directory holds the JSONL produced by \file{pred.py}, the per-task scoring file produced by \file{eval.py} or \file{infinitebench\_eval.py}, and a summary CSV produced by \file{reproduction/analysis/make\_summary.py}.
+
+The analysis scripts are small. \file{paper\_baselines.py} encodes the paper's published numbers for each ($\text{model}, \text{benchmark}, \text{variant}$) cell so a summariser can write the our-vs-paper deltas directly. \file{make\_summary.py} reads a results directory and writes a one-row summary; its soft-fail invocation at the end of each wrapper is what makes a partial-failure summariser non-fatal.
+
+\subsection{The audit-trail documents}
+\label{sec:repro-audit}
+
+The documents under \file{docs/} are not part of the pipeline but are integral to it. \file{paper\_reproduction\_runbook.md} holds the canonical command list for the 20-job matrix and is the single source of truth for what counts as a complete reproduction. \file{reproduction\_notes.md} is the append-only decision log; entries get added every time a wrapper changes or a deviation is recorded. \file{differences\_from\_paper.md} is where any numerical disagreement between our runs and the paper's table values gets logged, with a hypothesis for the cause. The two ASA-X documents (\file{asax\_setup.md} and \file{asax\_lessons\_learned.md}) capture the cluster-specific knowledge that took the most time to gather and is the most likely thing to be re-learned by a future reproducer.

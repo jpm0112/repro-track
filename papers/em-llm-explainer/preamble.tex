@@ -80,9 +80,10 @@
 
 % Convenience commands for frequently used objects.
 % \seqsplit lets long identifiers and paths break across line ends without
-% sliding into the right margin.
-\newcommand{\file}[1]{\texttt{\seqsplit{#1}}}
-\newcommand{\code}[1]{\texttt{\seqsplit{#1}}}
+% sliding into the right margin. Marked robust so the macros survive being
+% used inside moving arguments (section titles, captions, TOC entries).
+\DeclareRobustCommand{\file}[1]{\texttt{\seqsplit{#1}}}
+\DeclareRobustCommand{\code}[1]{\texttt{\seqsplit{#1}}}
 \newcommand{\param}[1]{\ensuremath{#1}}
 \newcommand{\Surprise}{\mathcal{S}}
 \newcommand{\Adj}{\mathbf{A}}
