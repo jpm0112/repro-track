@@ -1,0 +1,85 @@
+\section{Evaluation and results}
+\label{sec:evaluation}
+
+The paper backs the architecture with three families of experiments: long-context accuracy on standard benchmarks (\cref{sec:eval-longcontext}), agreement with human-annotated event boundaries on podcast transcripts (\cref{sec:human-alignment}), and graph-theoretic measurements of segmentation quality on PG-19 (\cref{sec:eval-segmentation}). The ablation table at the end (\cref{sec:eval-ablations}) breaks each component out so that a reproducer can attribute the gains.
+
+\subsection{Benchmarks and baselines}
+\label{sec:eval-benchmarks}
+
+\paragraph{LongBench.}
+LongBench \cite{bai2023longbench} is the main accuracy benchmark in the paper. The reported runs use six task groups: single-document QA (NarrativeQA, Qasper, MultiFieldQA), multi-document QA (HotpotQA, 2WikiMultihopQA, MuSiQue), summarisation (GovReport, QMSum, MultiNews), few-shot learning (TREC, TriviaQA, SAMSum), retrieval (PassageRetrieval, PassageCount), and coding (LCC, RepoBench-P). Each task contributes one score; the per-group score in Table~1 of the paper is the mean over the tasks in that group.
+
+\paragraph{$\infty$-Bench.}
+$\infty$-Bench \cite{zhang2024infbench} pushes context length into the hundred-thousand-token range. The reported runs use Code.Debug (C.D), Math.Find (M.F), Multi-Choice (MC), Retrieve.KV (R.KV), Retrieve.PassKey (R.P), and Retrieve.Number (R.N). The retrieval-style tasks (R.KV, R.P, R.N) are where EM-LLM has the largest margins, which is consistent with the paper's claim that the per-layer retrieval is precisely what helps.
+
+\paragraph{Extended passkey retrieval.}
+The 10M-token scalability claim comes from an extension of $\infty$-Bench's PassKey task. Baseline data for the long-context curve in Fig.~1 is taken from \textcite{ding2024longrope}, which lets EM-LLM be plotted alongside YaRN, LongRoPE-2048k, and the original PassKey settings on a common axis.
+
+\paragraph{Baselines.}
+Three baselines run head-to-head with EM-LLM: InfLLM \cite{xiao2024infllm} as the previous SOTA in group-based $k$-NN retrieval, RAG built on NV-Embed-v2 \cite{lee2024nvembed} as the strongest current embedding-retriever, and full-context inference with the base LLM as a brute-force upper bound (which only runs where the context fits in memory). The paper also runs a custom surprise-based RAG ablation that uses EM-LLM's surprise signal to pick chunks for a single-step retrieval, which isolates the contribution of EM-LLM's layer-wise mechanism from the contribution of surprise itself.
+
+\paragraph{Metrics.}
+LongBench scores combine F1 (QA, retrieval), ROUGE-L (summarisation), accuracy (few-shot, coding), and exact match where appropriate. $\infty$-Bench uses task-native accuracy. Segmentation-quality experiments use the three graph-theoretic measures from \cref{sec:method-refinement}: modularity, conductance, and the intra/inter-similarity ratio (I/IS) defined in Eq.\ 5 of the paper. The human-alignment experiment uses the Wasserstein distance between each method's boundary positions and the human-annotated boundary positions.
+
+\subsection{Long-context accuracy}
+\label{sec:eval-longcontext}
+
+\cref{tab:headline} reproduces the most salient cells of paper Table~1. The variant labels are S (surprise only), SM (surprise + modularity refinement), SC (surprise + conductance refinement), and SM+C (SM with contiguity buffer added). The numbers come straight from the paper; this companion does not re-run the benchmarks.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{lllcccc}
+  \toprule
+  Base LLM & Method & Budget & LongBench avg.\ & Retrieval task & $\infty$-Bench R.KV & R.P \\
+  \midrule
+  Mistral-v0.2 & InfLLM & 4k+2k & 41.9 & 64.0 & 95.6 & 100 \\
+  Mistral-v0.2 & EM-LLM (SM+C) & 4k+2k & \textbf{43.7} & \textbf{84.1} & \textbf{99.0} & 100 \\
+  \midrule
+  LLaMA-3-8B & InfLLM & 4k+4k & 47.0 & 84.0 & 5.0 & 100 \\
+  LLaMA-3-8B & EM-LLM (S) & 4k+4k & \textbf{47.2} & \textbf{87.5} & 4.2 & 100 \\
+  \midrule
+  LLaMA-3.1-8B & InfLLM & 4k+4k & 51.1 & 97.0 & 81.0 & 100 \\
+  LLaMA-3.1-8B & EM-LLM (SM) & 4k+4k & \textbf{51.3} & \textbf{98.5} & \textbf{90.2} & 100 \\
+  \bottomrule
+\end{tabular}
+\caption{Selected rows from paper Table~1. LongBench avg.\ is the mean over the six task groups. ``Budget'' is local tokens plus retrieved tokens. Bold entries are where EM-LLM beats InfLLM at the same budget.}
+\label{tab:headline}
+\end{table}
+
+The pattern is consistent. EM-LLM almost always edges the InfLLM baseline on aggregate, with the biggest jumps on retrieval and QA. The single negative on this slice is LLaMA-3-8B's $\infty$-Bench Retrieve.KV, where surprise-only segmentation slightly trails fixed-size segmentation (4.2 vs.\ 5.0); both scores are low in absolute terms, indicating the task is failing for both methods rather than a real loss in EM-LLM. The paper notes this in Appendix~A.1 and recommends the SM+C variant when Retrieve.KV matters.
+
+\paragraph{Against RAG and full-context.}
+On LLaMA-3.1-8B and LongBench, EM-LLM scores 51.58\% in the surprise-only setting, RAG with NV-Embed-v2 scores 36.44\%, and the full-context baseline scores 39.3\% (Fig.~1 of the paper). The 30.5-point gap over RAG is the headline of the paper's introduction and is consistent with the per-layer retrieval argument made in \cref{sec:method-retrieval}: RAG retrieves once at the input layer, EM-LLM retrieves at every layer independently.
+
+\paragraph{Scaling to 10M tokens.}
+Fig.~1 (bottom) of the paper plots passkey-retrieval accuracy against sequence length for EM-LLM, YaRN-extended Mistral, LongLoRA + CodeLLaMA, and LongRoPE-2048k. EM-LLM holds 100\% accuracy at 10.2M tokens, two orders of magnitude past the practical ceiling of full-context Mistral. The complexity expression behind this is $O(n(n_l + n_r) + n(n - n_l)/m \cdot b)$, where $n$ is the sequence length, $n_l$ the local window size, $n_r$ the retrieved budget, $m$ the refinement chunk size, and $b$ the refinement cost per chunk (Appendix C.1). The dominant term is sublinear in $n$ once the local window and the retrieved budget are fixed.
+
+\subsection{Agreement with human event segmentation}
+\label{sec:human-alignment}
+
+The second experiment evaluates segmentation quality directly rather than through downstream task accuracy. The data are three human-annotated podcast transcripts from \textcite{kumar2023neural}, with ground-truth event boundaries provided by listeners.
+
+The paper compares six segmentation methods on these transcripts: F (fixed-size), FM (fixed + modularity refinement), FC (fixed + conductance refinement), S (surprise only), SM (surprise + modularity), and SC (surprise + conductance). For each method, the per-layer modularity, conductance, and I/IS of the induced segmentation are computed and compared with the same metrics on the human-annotated segmentation.
+
+Two patterns come out of Fig.~4 of the paper. First, surprise-based methods (S, SM, SC) match human segmentation more closely than fixed-size methods (F, FM, FC), and InfLLM's fixed-size method (F) is the only one whose modularity score sits below random. Second, refinement adds further improvement on top of surprise: SM and SC each push modularity higher than S alone. The Wasserstein distance between each method's boundary positions and the human positions follows the same ranking: S, SM, and SC are closest to humans, with SM the closest of the three on average.
+
+This is the result most directly relevant to readers who care whether ``LLM surprise looks like human surprise''. The answer the paper supports is qualified yes: not pixel-perfect agreement, but the same ranking of methods on the same task.
+
+\subsection{Segmentation quality on PG-19}
+\label{sec:eval-segmentation}
+
+Table~2 of the paper reports the same three graph metrics on the PG-19 long-text corpus, this time without human ground truth. The numbers are differences from random segmentation, so positive modularity and I/IS values, and negative conductance values, indicate gains over chance.
+
+On every base LLM tested (Mistral-7B, LLaMA-2-7B, LLaMA-3-8B), the ranking is consistent. Fixed-size segmentation (F) is essentially indistinguishable from random by modularity and I/IS, and worse than random by conductance. Surprise-based methods are well above random on all three metrics. Adding refinement on top of surprise (SM, SC) gives a further boost, with SM (modularity refinement) doing the best on the modularity score, as one would expect from a method that explicitly optimises modularity. The takeaway is that surprise picks rough event locations and refinement sharpens them, with each step measurable in graph-theoretic terms.
+
+\subsection{Ablations}
+\label{sec:eval-ablations}
+
+The ablation analysis (paper Section~4.4, Tables~3--7 in the appendix) is the part most useful for setting expectations on a reproduction. Three high-level findings:
+\begin{itemize}
+  \item \textbf{Refinement} alone (S vs.\ SM, SC) improves performance in roughly 60\% of LongBench and $\infty$-Bench tasks. The improvement is largest on QA and retrieval tasks, where coherent event boundaries help the $k$-NN find the right block.
+  \item \textbf{Contiguity buffer} alone (S vs.\ S+C, SM vs.\ SM+C) improves performance in roughly 44\% of tasks. The improvement is concentrated on tasks where temporal order matters: multi-document QA in particular.
+  \item \textbf{The two are complementary}, not redundant. The best variant for a given task is usually SM+C, but the paper does not claim a universal winner; some tasks favour S, others SM or SC.
+\end{itemize}
+The paper also reports a sweep over the contiguity ratio $k_r = k_c / k$ at $\{0.3, 0.5, 0.7\}$ (Fig.~13 of the appendix). The result is that contiguity buffers as large as or smaller than the similarity buffer ($k_r \le 0.5$) work best, with $k_r = 0.3$ the most common winner. The similarity buffer carries most of the load; the contiguity buffer is a useful supplement, not a replacement.
