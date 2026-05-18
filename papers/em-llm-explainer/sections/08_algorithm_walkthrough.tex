@@ -30,7 +30,7 @@ em_llm/
 
 The two public entry points re-exported from \file{em\_llm/\_\_init\_\_.py} are \code{patch\_hf} and \code{GreedySearch}. Everything else is reached through one of those two.
 
-\subsection{The attention forward: \file{attention/em\_llm.py}}
+\subsection{The attention forward: \filehead{attention/em\_llm.py}}
 \label{sec:walkthrough-em-llm}
 
 This file holds two top-level functions. The first, \code{em\_llm\_attn\_forward}, is a closure factory. The second, \code{em\_llm\_causal\_lm\_forward}, replaces the top-level \code{forward} of the causal LM and is where surprise gets computed and (optionally) refined.
@@ -65,7 +65,7 @@ The threshold rule (\cref{eq:threshold}) is implemented a few lines later, with 
 
 When refinement is enabled, the next block stacks the keys for the relevant layer range, computes the dot-product similarity matrix as $A = K K^\top$ (\file{em\_llm.py:245}), and dispatches each batch's candidate boundaries to \code{events\_with\_similarity\_adjustment} (\file{em\_llm.py:255}). The output replaces \code{divide} with the refined boundary mask before any block is added to memory. After the refinement pass, \code{update\_memory} is called on each layer's \code{ContextManager} with the final surprisal mask (\file{em\_llm.py:268}).
 
-\subsection{The context manager: \file{attention/context\_manager.py}}
+\subsection{The context manager: \filehead{attention/context\_manager.py}}
 \label{sec:walkthrough-context-manager}
 
 This file is the largest in the package, around 1{,}000 lines, and owns the per-layer KV cache as well as the event store. Three classes carry the load: \code{CudaCache}, \code{MemoryBlock}, and \code{ContextManager}.
@@ -96,7 +96,7 @@ The local-vs-global split happens here: the same projected $Q$, $K$, $V$ tensors
 
 \paragraph{Block-size constraint.} The \code{batch\_size == 1} assertion at \file{context\_manager.py:792} is the most visible operational limit, and it is enforced again at \file{context\_manager.py:950} inside \code{update\_memory}. There is no configuration flag to relax it; lifting it would require non-trivial refactoring of the per-batch lists scattered across the class.
 
-\subsection{Similarity refinement: \file{attention/similarity\_refinement/}}
+\subsection{Similarity refinement: \filehead{attention/similarity\_refinement/}}
 \label{sec:walkthrough-similarity}
 
 Two files. \file{segmentation.py} carries out the boundary adjustment; \file{similarity.py} provides the metric implementations. The implementations of modularity and conductance are short and worth reading directly.
@@ -123,19 +123,19 @@ Conductance lives in the same file at \file{similarity.py:30}--\file{similarity.
 
 The refinement loop itself is in \code{events\_with\_similarity\_adjustment} (\file{segmentation.py:4}--\file{segmentation.py:50}). For each pair of consecutive candidate boundaries, the function takes a window twice the size of the proposed event, evaluates the chosen metric at every position in that window via \code{calc\_adjacent\_similarity\_with\_offset}, and picks the position that maximises modularity or I/IS, or minimises conductance. The \code{min\_size} parameter prevents events smaller than a configured floor from being created and is used to keep refinement from collapsing two surprise boundaries into one zero-width event.
 
-\subsection{Multi-stage dot-product attention: \file{attention/dot\_product\_attention/}}
+\subsection{Multi-stage dot-product attention: \filehead{attention/dot\_product\_attention/}}
 \label{sec:walkthrough-dpa}
 
 Two files. \file{base.py} defines \code{MultiStageDotProductAttention}, an abstract class with hooks for scoring, masking, and softmax accumulation. \file{torch\_impl.py} provides \code{TorchMultiStageDotProductAttention}, the only concrete implementation in the released code and the one used by the \code{ContextManager}.
 
 The library exists so that the per-step attention can operate over the union of four token regions (initial sinks, contiguity buffer, similarity buffer, local window) without writing one large attention call. Each region contributes a softmax accumulation that is folded into the running output. This factoring is what makes it cheap to add or drop a region between steps without re-running the entire attention.
 
-\subsection{Rotary embeddings: \file{attention/rope.py}}
+\subsection{Rotary embeddings: \filehead{attention/rope.py}}
 \label{sec:walkthrough-rope}
 
 The class \code{RotaryEmbeddingESM} wraps the standard rotary positional embedding with two pieces of machinery EM-LLM needs. First, a \code{distance\_scale} multiplier that lets the wrapper compress effective distances when running on a model whose original window has been extended (the long/short factor case for Phi-3 is the visible use). Second, \code{apply\_rotary\_pos\_emb\_one\_angle}, used inside \code{ContextManager.append} to apply a single fixed angle to retrieved-token queries so that they sit at a consistent, in-distribution position regardless of where they originally appeared in the stream. This is the implementation correlate of the fixed-position-embedding choice described in \cref{sec:rope-retrieved}.
 
-\subsection{The Hugging Face patch: \file{utils/patch\_hf.py}}
+\subsection{The Hugging Face patch: \filehead{utils/patch\_hf.py}}
 \label{sec:walkthrough-patch-hf}
 
 The entry point \code{patch\_hf} (\file{patch\_hf.py:221}--\file{patch\_hf.py:293}) is short and dense. It does five things, in order:
@@ -150,7 +150,7 @@ The combined effect is that every call to the patched model now flows through EM
 
 The \code{huggingface\_forward} adapter (\file{patch\_hf.py:10}--\file{patch\_hf.py:47}) bridges the call signatures: it pulls the per-layer projections (\code{q\_proj}, \code{k\_proj}, \code{v\_proj} for LLaMA-style layers, \code{qkv\_proj} for fused-projection layers) and forwards them as positional arguments to the inner EM-LLM forward.
 
-\subsection{Generation: \file{utils/greedy\_search.py}}
+\subsection{Generation: \filehead{utils/greedy\_search.py}}
 \label{sec:walkthrough-greedy-search}
 
 \code{GreedySearch} is a cache-aware generation loop. It is a thin replacement for the Hugging Face generate, the difference being that it threads the per-layer \code{ContextManager} instances through every step rather than letting \code{generate} re-create caches. The class is small and almost entirely orchestration; the interesting behaviour all lives in the attention forward and the context manager. The benchmark harness in \cref{sec:benchmark} uses \code{GreedySearch} for the inference loop in \file{benchmark/pred.py}.

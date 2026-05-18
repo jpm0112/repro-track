@@ -3,7 +3,7 @@
 
 The benchmark directory is the orchestration layer. It loads a base LLM, patches it with EM-LLM, streams a benchmark dataset through the model, writes per-example predictions to a JSONL file, and scores them. The chapter walks the five files in the order they get touched during a full run.
 
-\subsection{Inference: \file{pred.py}}
+\subsection{Inference: \filehead{pred.py}}
 \label{sec:bench-pred}
 
 \file{pred.py} is the largest file in the harness at 614 lines. The entry point is \code{main(args)} (\file{pred.py:533}), invoked once per worker process. The flow is:
@@ -24,21 +24,21 @@ The multi-process branch is gated on \code{world\_size > 1} (\file{pred.py:569})
 
 \paragraph{Hooks into EM-LLM.} The harness does not import any EM-LLM internals beyond \code{patch\_hf} and \code{GreedySearch}. All algorithm-level hyperparameters travel as keyword arguments through \code{model\_config} into \code{patch\_hf} and from there to the per-layer \code{ContextManager}. This is what makes the OmegaConf override pattern (\cref{sec:wrappers-configs}) work without touching code: a config field like \code{model.surprisal\_threshold\_gamma} ends up as the \code{surprisal\_threshold\_gamma} argument to \code{em\_llm\_attn\_forward} through the kwargs forwarding chain.
 
-\subsection{LongBench scoring: \file{eval.py}}
+\subsection{LongBench scoring: \filehead{eval.py}}
 \label{sec:bench-eval}
 
 \file{eval.py} (217 lines) is run after a LongBench prediction file has been produced. The entry point is \code{compute\_scores}, but the externally interesting functions are \code{scorer} (\file{eval.py:143}) and \code{scorer\_e} (\file{eval.py:115}). The first computes the standard LongBench score per task; the second computes the length-stratified ``extended'' score that buckets predictions by input length (0--4K, 4K--8K, 8K+).
 
 Per-task scoring runs through \code{calc\_score} (\file{eval.py:134}), which dispatches by dataset name to one of the metrics in \file{metrics.py}. The dispatch is a lookup table inside \code{calc\_score} that maps each LongBench task to its native metric: F1 for QA, ROUGE for summarisation, exact-match for retrieval, code similarity for coding, classification accuracy for few-shot.
 
-\subsection{$\infty$-Bench scoring: \file{infinitebench\_eval.py}}
+\subsection{$\infty$-Bench scoring: \filehead{infinitebench\_eval.py}}
 \label{sec:bench-infbench}
 
 \file{infinitebench\_eval.py} is the $\infty$-Bench-specific scoring harness. It re-implements the metrics the $\infty$-Bench paper uses rather than rely on LongBench's metric set. The function \code{get\_score\_one} (\file{infinitebench\_eval.py:371}) is the entry point: it takes a single prediction and label plus a task name, and dispatches to one of the per-task scorers (\code{get\_score\_one\_kv\_retrieval}, \code{get\_score\_one\_passkey}, \code{get\_score\_one\_math\_find}, and so on, defined at \file{infinitebench\_eval.py:138}--\file{infinitebench\_eval.py:346}). The wrapper \code{compute\_scores} (\file{infinitebench\_eval.py:439}) iterates over a prediction file and aggregates per-task scores.
 
 The duplicated normalisation functions (\code{normalize\_answer}, \code{normalize\_zh\_answer}) at the top of the file mirror the ones in \file{metrics.py} but differ in details that matter for the $\infty$-Bench scoring rules. Keeping them separate is what allows the two scoring scripts to be run independently of each other.
 
-\subsection{Shared metric primitives: \file{metrics.py}}
+\subsection{Shared metric primitives: \filehead{metrics.py}}
 \label{sec:bench-metrics}
 
 \file{metrics.py} holds the small functions that the LongBench scorer calls into. Each function takes a prediction string and a ground-truth string (or a list of ground truths) and returns a numeric score. The implementations are short and standard. The full list, with line numbers in the released code:
@@ -52,7 +52,7 @@ The duplicated normalisation functions (\code{normalize\_answer}, \code{normaliz
 \end{itemize}
 Reproducers who want to extend the harness with new metrics typically add them here and register them in \code{calc\_score} inside \file{eval.py}.
 
-\subsection{Data preparation: \file{download.py}}
+\subsection{Data preparation: \filehead{download.py}}
 \label{sec:bench-download}
 
 \file{download.py} fetches the LongBench, $\infty$-Bench, and passkey datasets from the Hugging Face Hub and writes them to local paths the rest of the harness expects. Despite the name, the file is mostly a small driver around \code{datasets.load\_dataset(\dots)} with the right repository identifiers; there is no scraping or custom-format parsing. The reproduction calls it through \file{reproduction/scripts/shell/01\_download\_data.sh}.

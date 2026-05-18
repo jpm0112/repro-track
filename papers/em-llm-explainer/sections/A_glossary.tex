@@ -1,0 +1,67 @@
+\section{Glossary}
+\label{sec:glossary}
+
+\begin{description}[style=nextline,itemsep=0.4em]
+  \item[Attention sink]
+  A small number of initial-position tokens whose key vectors absorb attention probability mass that would otherwise be misdirected when the rest of the context is evicted. EM-LLM keeps a fixed prefix of 128 such tokens following \textcite{xiao2024attsinks}.
+
+  \item[Bayesian surprise]
+  The negative log-likelihood of an observed event under the model's predictive distribution, $-\log P(x_t \mid x_{<t}; \theta)$. EM-LLM uses the LLM's own next-token surprise as the boundary signal (\cref{eq:surprise}).
+
+  \item[Conductance]
+  A graph-theoretic measure of community quality. The conductance of a cut is the ratio of edge weight crossing the cut to the smaller of the two side volumes (\cref{eq:conductance}). Lower is better; EM-LLM offers conductance as a refinement objective alongside modularity.
+
+  \item[Contiguity buffer]
+  The second of EM-LLM's two retrieval buffers. When an event is fetched by similarity, its temporal neighbours (events within $\pm n$ positions in the source sequence) are enqueued so the LLM can exploit sequential structure. Size $k_c$, capacity controlled by the contiguity ratio $k_r = k_c / k$.
+
+  \item[Contiguity effect]
+  The empirical observation, in human free-recall studies, that items studied close together in time are more likely to be recalled close together \cite{kahana1996contiguity, howard2002contiguity}. The contiguity buffer is the operational analogue.
+
+  \item[Episodic memory]
+  Memory for particular experiences anchored in time and place, in contrast to semantic memory which holds context-free general knowledge \cite{tulving1972episodic}. EM-LLM gives a frozen LLM a temporary episodic store sitting between its working memory and its parameter-encoded semantic memory.
+
+  \item[Event segmentation]
+  The process of carving a continuous experience or token stream into discrete, named events. In EM-LLM, surprise picks candidate boundaries and graph clustering refines them.
+
+  \item[Free recall]
+  An experimental paradigm in which a participant studies a list and then reproduces as many items as possible in any order. The temporal dynamics of free recall (contiguity, primacy, recency, asymmetry) are the source of EM-LLM's retrieval design.
+
+  \item[Hugging Face patch]
+  Refers to \code{em\_llm.utils.patch\_hf.patch\_hf}. Replaces the attention forward, model forward, and causal-LM forward of a loaded \texttt{transformers} model with EM-LLM's versions, without forking the library.
+
+  \item[InfLLM]
+  The previous SOTA group-based $k$-NN retrieval method for long-context LLMs \cite{xiao2024infllm}. EM-LLM keeps InfLLM's block-fetch and representative-token ideas but replaces its fixed-size segmentation with surprise-based, refinement-aware segmentation.
+
+  \item[KV cache]
+  The store of past keys and values that a transformer reuses to avoid recomputing attention over already-processed tokens. EM-LLM's episodic memory is a structured KV cache: blocks are events, retrieval is $k$-NN over block representatives, and the cache can spill to CPU or disk.
+
+  \item[$k$-NN retrieval]
+  $k$-nearest-neighbours lookup. In EM-LLM, used to rank stored events by similarity to the current attention query, with the top $k_s$ entering the similarity buffer. Approximate $k$-NN is used at scale.
+
+  \item[Local context]
+  The most recent tokens, sized to fit within the underlying LLM's original training window. Full softmax attention is applied here unchanged. Plays the role of working memory in EM-LLM's three-part context layout.
+
+  \item[Modularity]
+  A graph-theoretic measure of community quality. Modularity compares within-community edge density to what a null model with the same degree sequence would predict (\cref{eq:modularity}). Higher is better; the paper reports modularity as EM-LLM's preferred refinement objective.
+
+  \item[OmegaConf override]
+  The reproduction's mechanism for changing run parameters without editing upstream YAML. Each leaf of a YAML override file is passed as a \texttt{key=value} CLI argument to \file{benchmark/pred.py}, which OmegaConf merges over the upstream config.
+
+  \item[Per-layer retrieval]
+  EM-LLM's design choice that each transformer layer runs its own $k$-NN against the event store and may attend to different events than other layers. The headline contrast with RAG, which retrieves once at the input layer only.
+
+  \item[RoPE (rotary position embedding)]
+  The positional encoding scheme used in modern LLMs (Mistral, LLaMA, Phi, Qwen) \cite{su2024roformer}. EM-LLM uses its own \code{RotaryEmbeddingESM} variant that supports a distance-scaling factor and applies a fixed angle to retrieved tokens to keep them in the LLM's in-distribution position range.
+
+  \item[Similarity buffer]
+  The first of EM-LLM's two retrieval buffers. Holds the $k_s$ events whose representative tokens are most similar to the current query under dot-product similarity.
+
+  \item[Surprise threshold]
+  The cutoff $T_t = \mu_{t-\tau:t} + \gamma \, \sigma_{t-\tau:t}$ on the running surprise statistics that decides which tokens are candidate event boundaries (\cref{eq:threshold}). The scaling factor $\gamma$ is the main user-tuned parameter.
+
+  \item[Vendored upstream]
+  A copy of an external repository checked into this project at a pinned commit and never modified. \file{em-llm-model/} and \file{infllm-model/} are the two vendored repos in this reproduction.
+
+  \item[Working memory]
+  The small, attention-controlled buffer of currently active content in cognitive models \cite{baddeley1992working, cowan2001focus}. EM-LLM's local context window is the operational analogue: bounded in size, processed with full attention, and concerned only with the immediate task.
+\end{description}

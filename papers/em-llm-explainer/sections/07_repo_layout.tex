@@ -32,7 +32,7 @@ The first thing to internalise is the split between code we modify and code we d
 
 Everything reproduction-specific lives outside those two directories. The wrapper scripts in \file{reproduction/scripts/shell/} call into \file{em-llm-model/benchmark/pred.py} (and the analogous InfLLM entry point) with overrides supplied at the command line via OmegaConf. The configs in \file{reproduction/configs/} are sparse and only override the fields that need adjusting per backend; the rest is inherited from the upstream YAML templates.
 
-\subsection{Vendored upstream: \file{em-llm-model/}}
+\subsection{Vendored upstream: \filehead{em-llm-model/}}
 \label{sec:vendored}
 
 The upstream code under \file{em-llm-model/} has two layers. The first is \file{em\_llm/}, the algorithm itself: attention wrappers, the context manager, the similarity-refinement utilities, RoPE handling, and the Hugging Face patch (\cref{sec:walkthrough}). The second is \file{benchmark/}, the evaluation harness that loads a base LLM, patches it with EM-LLM's forward methods, and runs the LongBench and $\infty$-Bench tasks (\cref{sec:benchmark}).
@@ -79,7 +79,7 @@ Results land under \file{reproduction/results/<system>/<benchmark>/<model>\_<var
 
 The analysis directory at \file{reproduction/analysis/} holds the small scripts that turn raw outputs into the comparison tables and figures used in the eventual manuscript. \file{paper\_baselines.py} encodes the paper's published numbers; \file{make\_summary.py} reduces a run directory to a one-row entry; the notebooks combine these into the cross-system tables.
 
-\subsection{The audit trail in \file{docs/}}
+\subsection{The audit trail in \filehead{docs/}}
 \label{sec:audit-trail}
 
 The documentation directory holds the platform-specific knowledge that does not belong in code:

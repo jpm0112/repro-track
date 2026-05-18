@@ -1,0 +1,45 @@
+\section{Notation reference}
+\label{sec:notation}
+
+The symbol set follows the paper. Where a code identifier differs, both names are given.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4cm}>{\raggedright\arraybackslash}p{6cm}}
+  \toprule
+  Symbol & Domain & Meaning \\
+  \midrule
+  $x_t$ & token & The $t$-th token in the input sequence. \\
+  $\theta$ & LLM parameters & The frozen base-model parameters. EM-LLM never updates these. \\
+  $\Surprise(x_t)$ & $\mathbb{R}_{\ge 0}$ & Bayesian surprise at position $t$ (\cref{eq:surprise}). \\
+  $T_t$ & $\mathbb{R}$ & Adaptive threshold for surprise-based boundary detection (\cref{eq:threshold}). \\
+  $\mu_{t-\tau:t}$, $\sigma_{t-\tau:t}$ & $\mathbb{R}$ & Running mean and standard deviation of $\Surprise$ over the trailing window of length $\tau$. \\
+  $\gamma$ & $\mathbb{R}_{>0}$ & Surprise threshold scale; main user-tuned hyperparameter. Code name: \code{surprisal\_threshold\_gamma}. \\
+  $\tau$ & $\mathbb{N}$ & Trailing-window length for the surprise statistics. \\
+  $B$ & $\{1, \dots, n\}^k$ & Ordered list of event boundary positions, $b_1 < b_2 < \dots < b_k$. \\
+  $b_i$ & $\{1, \dots, n\}$ & The $i$-th boundary position. \\
+  $\Adj^h$, $A$ & $\mathbb{R}^{n \times n}$ & Similarity adjacency matrix of attention keys for head $h$ (\cref{eq:adjacency}). \\
+  $K^h_i$ & $\mathbb{R}^{d_k}$ & Key vector for token $i$ in attention head $h$. \\
+  $\Modularity$ & $\mathbb{R}$ & Modularity of a partition (\cref{eq:modularity}). Maximised by refinement. \\
+  $\Conductance$ & $\mathbb{R}_{\ge 0}$ & Conductance of a cut (\cref{eq:conductance}). Minimised by refinement. \\
+  $k$ & $\mathbb{N}$ & Total retrieved-event budget per layer (in tokens). \\
+  $k_s$ & $\mathbb{N}$ & Token budget for the similarity buffer. \\
+  $k_c$ & $\mathbb{N}$ & Token budget for the contiguity buffer. \\
+  $k_r = k_c / k$ & $[0, 1]$ & Contiguity ratio; the fraction of the retrieval budget reserved for the contiguity buffer. Default $0.3$. \\
+  $n$ (neighbour radius) & $\mathbb{N}$ & Distance, in events, used to enqueue temporal neighbours into the contiguity buffer. Paper uses $n = 1$. \\
+  $n$ (sequence length) & $\mathbb{N}$ & The total number of tokens in the input sequence. Context dependent; the surrounding text disambiguates. \\
+  $n_l$ & $\mathbb{N}$ & Size of the local context window. Code name: \code{n\_local}. \\
+  $n_r$ & $\mathbb{N}$ & Number of retrieved tokens per step. Equals $k$ when the buffers are full. \\
+  $n_\text{init}$ & $\mathbb{N}$ & Size of the attention-sink prefix. Fixed at 128. Code name: \code{n\_init}. \\
+  $m$ & $\mathbb{N}$ & Chunk size for the refinement loop; appears in the $O(nm)$ complexity. Code name: \code{exc\_block\_size} (when the chunk and the refinement window coincide). \\
+  \code{max\_block\_size} & $\mathbb{N}$ & Hard cap on the number of tokens per stored event. \\
+  $h$ & layer index & Attention head index (used in $K^h$, $\Adj^h$). \\
+  $L$ & $\mathbb{N}$ & Number of transformer layers in the base LLM. Each holds its own \code{ContextManager}. \\
+  \bottomrule
+\end{tabular}
+\caption{Symbol reference. Symbols in the upper block come straight from the paper; symbols in the lower block are introduced by the implementation and surface only in the code chapters.}
+\label{tab:notation}
+\end{table}
+
+Two conventions worth flagging because they trip readers up. First, $n$ is used both for sequence length and for the contiguity-buffer neighbour radius; the paper does this without comment, and the surrounding text always makes the meaning clear. Second, the paper writes the local-plus-retrieved budget as ``4k+2k'' or ``4k+4k''. The first number is $n_l$ and the second is $n_r$, both measured in tokens (not events).

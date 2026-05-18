@@ -79,11 +79,17 @@
 }
 
 % Convenience commands for frequently used objects.
-% \seqsplit lets long identifiers and paths break across line ends without
-% sliding into the right margin. Marked robust so the macros survive being
-% used inside moving arguments (section titles, captions, TOC entries).
-\DeclareRobustCommand{\file}[1]{\texttt{\seqsplit{#1}}}
-\DeclareRobustCommand{\code}[1]{\texttt{\seqsplit{#1}}}
+% In body text \file and \code wrap their argument with \seqsplit so long
+% paths and identifiers can break at the right margin. Inside section titles
+% or captions the moving-argument expansion confuses seqsplit, so we provide
+% a no-break \filehead alias for that case. We also protect \seqsplit so the
+% body version survives the .toc write at least when nothing breaks.
+\DeclareRobustCommand{\file}[1]{\texttt{\protect\seqsplit{#1}}}
+\DeclareRobustCommand{\code}[1]{\texttt{\protect\seqsplit{#1}}}
+% Use these inside \section, \subsection, \paragraph, captions: same look,
+% no seqsplit.
+\newcommand{\filehead}[1]{\texttt{#1}}
+\newcommand{\codehead}[1]{\texttt{#1}}
 \newcommand{\param}[1]{\ensuremath{#1}}
 \newcommand{\Surprise}{\mathcal{S}}
 \newcommand{\Adj}{\mathbf{A}}
