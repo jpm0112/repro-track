@@ -31,26 +31,32 @@ BATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Per-wrapper resource specs. Keep in sync with batch_submission.md table.
 # Format: walltime ncpus mem gpus
 #
-# History: 2026-05-18 first batch run on Mistral hit two failure modes —
-#   - LongBench: walltime 14h exhausted at 7/16 tasks (job 46923 PBS-killed).
-#   - IB: died silently mid-task #2 at 15.5h with 120gb (suspected OOM; docs
-#     have always called for 200gb).
-#   - Passkey-1M: died silently at 50min/1995 chunks with 64gb (OOM-killed;
-#     1M-token offload buffers exceeded the budget).
-# Bumped LongBench to 26h, IB and pk1m to 200gb to match docs. Rerunning the
-# same wrapper resumes per-sample via pred.py's get_past_ids().
+# History:
+#   2026-05-18 first batch run on Mistral hit two failure modes —
+#     - LongBench: walltime 14h exhausted at 7/16 tasks (job 46923 PBS-killed).
+#     - IB: died silently mid-task #2 at 15.5h with 120gb (suspected OOM).
+#     - Passkey-1M: died silently at 50min/1995 chunks with 64gb (OOM-killed).
+#   2026-05-24 attempted bumping IB/pk1m to 200gb; qsub rejected all three
+#     with "Job violates queue and/or server resource limits" — the gpu
+#     queue caps memory at 120gb (consistent with commit 80ea7a8's note).
+#     Reverted memory to 120gb; bumped LongBench walltime to 26h. To
+#     compensate for the tight memory on long-context runs, pass
+#     EXTRA_OVERRIDES at submit time, e.g.:
+#       EXTRA_OVERRIDES="model.min_free_cpu_memory=20 \
+#                        model.disk_offload_threshold=150000"
+#     Rerunning the same wrapper resumes per-sample via get_past_ids().
 declare -A RESOURCES=(
-    [em_llm_longbench_mistral]="26:00:00 4 128gb 1"
-    [em_llm_longbench_llama3]="26:00:00 4 128gb 1"
-    [em_llm_longbench_llama31_sm]="26:00:00 4 128gb 1"
-    [em_llm_longbench_llama31_s]="26:00:00 4 128gb 1"
-    [em_llm_longbench_phi3_mini]="26:00:00 4 128gb 1"
-    [em_llm_longbench_phi35_mini]="26:00:00 4 128gb 1"
-    [em_llm_infinitebench_mistral]="26:00:00 4 200gb 1"
-    [em_llm_infinitebench_llama3]="26:00:00 4 200gb 1"
-    [em_llm_infinitebench_llama31_sm]="26:00:00 4 200gb 1"
-    [em_llm_infinitebench_llama31_s]="26:00:00 4 200gb 1"
-    [em_llm_passkey_1m_mistral]="26:00:00 4 200gb 1"
+    [em_llm_longbench_mistral]="26:00:00 4 120gb 1"
+    [em_llm_longbench_llama3]="26:00:00 4 120gb 1"
+    [em_llm_longbench_llama31_sm]="26:00:00 4 120gb 1"
+    [em_llm_longbench_llama31_s]="26:00:00 4 120gb 1"
+    [em_llm_longbench_phi3_mini]="26:00:00 4 120gb 1"
+    [em_llm_longbench_phi35_mini]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_mistral]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_llama3]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_llama31_sm]="26:00:00 4 120gb 1"
+    [em_llm_infinitebench_llama31_s]="26:00:00 4 120gb 1"
+    [em_llm_passkey_1m_mistral]="26:00:00 4 120gb 1"
     # passkey_10m needs 4 GPUs and 512gb; do NOT include unattended.
     # Submit separately once allocated extra resources (contact hpc@asc.edu).
     [em_llm_passkey_10m_mistral]="48:00:00 16 512gb 4"
