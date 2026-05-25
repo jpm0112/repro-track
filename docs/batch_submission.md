@@ -52,18 +52,22 @@ bash reproduction/scripts/asax/batch/submit_batch.sh --dry-run em_llm_longbench_
 
 | Wrapper name | Paper row | Walltime | Memory | GPUs |
 |---|---|---:|---:|---:|
-| `em_llm_longbench_mistral` | 1 | 14h | 128gb | 1 |
-| `em_llm_longbench_llama3` | 2 | 14h | 128gb | 1 |
-| `em_llm_longbench_llama31_sm` | 3 (Table 2) | 14h | 128gb | 1 |
-| `em_llm_longbench_llama31_s` | 4 (Table 1) | 14h | 128gb | 1 |
-| `em_llm_longbench_phi3_mini` | 5 | 14h | 128gb | 1 |
-| `em_llm_longbench_phi35_mini` | 6 | 14h | 128gb | 1 |
+| `em_llm_longbench_mistral` | 1 | 26h | 128gb | 1 |
+| `em_llm_longbench_llama3` | 2 | 26h | 128gb | 1 |
+| `em_llm_longbench_llama31_sm` | 3 (Table 2) | 26h | 128gb | 1 |
+| `em_llm_longbench_llama31_s` | 4 (Table 1) | 26h | 128gb | 1 |
+| `em_llm_longbench_phi3_mini` | 5 | 26h | 128gb | 1 |
+| `em_llm_longbench_phi35_mini` | 6 | 26h | 128gb | 1 |
 | `em_llm_infinitebench_mistral` | 7 | 26h | 200gb | 1 |
 | `em_llm_infinitebench_llama3` | 8 | 26h | 200gb | 1 |
 | `em_llm_infinitebench_llama31_sm` | 9 (Table 2) | 26h | 200gb | 1 |
 | `em_llm_infinitebench_llama31_s` | 10 (Table 1) | 26h | 200gb | 1 |
-| `em_llm_passkey_1m_mistral` | 11 | 26h | 64gb | 1 |
+| `em_llm_passkey_1m_mistral` | 11 | 26h | 200gb | 1 |
 | `em_llm_passkey_10m_mistral` | 12 (headline) | 48h | 512gb | 4 |
+
+> Walltime/memory revised 2026-05-24 after the first batch run on Mistral.
+> LongBench's original 14h hit the wall at 7/16 tasks; IB at 120gb and
+> Passkey-1M at 64gb both OOM-killed. See submit_batch.sh history comment.
 
 InfLLM-baseline wrappers (rows 13-20) will be added once `infllm-model/`
 is populated. See `docs/infllm_setup.md`.

@@ -12,30 +12,48 @@
 #
 # If you pass `--dry-run` as the first arg, prints the qsub commands without
 # actually submitting them.
+#
+# Resuming a failed/killed run: just re-submit the same wrapper. `pred.py`
+# scans the per-task .jsonl in the output dir and skips already-completed
+# sample IDs (see get_past_ids() in em-llm-model/benchmark/pred.py). So:
+#   - LongBench / IB: tasks with a fully-populated .jsonl are skipped; the
+#     dataset loop only re-inferences remaining samples in remaining tasks.
+#   - Passkey extended: single dataset with one sample per length — if the
+#     sample didn't complete (no .jsonl row), it restarts from scratch.
+# Stale files under <out_dir>/offload_data/ from a killed run are harmless
+# but waste inodes; safe to `rm -rf` them before resuming.
 
 set -eo pipefail
 
 EMAIL="jpm0112@auburn.edu"
 BATCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Per-wrapper resource specs. Keep in sync with paper_reproduction_runbook.md.
+# Per-wrapper resource specs. Keep in sync with batch_submission.md table.
 # Format: walltime ncpus mem gpus
+#
+# History: 2026-05-18 first batch run on Mistral hit two failure modes —
+#   - LongBench: walltime 14h exhausted at 7/16 tasks (job 46923 PBS-killed).
+#   - IB: died silently mid-task #2 at 15.5h with 120gb (suspected OOM; docs
+#     have always called for 200gb).
+#   - Passkey-1M: died silently at 50min/1995 chunks with 64gb (OOM-killed;
+#     1M-token offload buffers exceeded the budget).
+# Bumped LongBench to 26h, IB and pk1m to 200gb to match docs. Rerunning the
+# same wrapper resumes per-sample via pred.py's get_past_ids().
 declare -A RESOURCES=(
-    [em_llm_longbench_mistral]="14:00:00 4 120gb 1"
-    [em_llm_longbench_llama3]="14:00:00 4 120gb 1"
-    [em_llm_longbench_llama31_sm]="14:00:00 4 120gb 1"
-    [em_llm_longbench_llama31_s]="14:00:00 4 120gb 1"
-    [em_llm_longbench_phi3_mini]="14:00:00 4 120gb 1"
-    [em_llm_longbench_phi35_mini]="14:00:00 4 120gb 1"
-    [em_llm_infinitebench_mistral]="26:00:00 4 120gb 1"
-    [em_llm_infinitebench_llama3]="26:00:00 4 120gb 1"
-    [em_llm_infinitebench_llama31_sm]="26:00:00 4 120gb 1"
-    [em_llm_infinitebench_llama31_s]="26:00:00 4 120gb 1"
-    [em_llm_passkey_1m_mistral]="26:00:00 4 64gb 1"
-    # passkey_10m needs more than the gpu queue's 120gb cap and 4 GPUs;
-    # do NOT include unattended. Submit separately once allocated extra
-    # resources (contact hpc@asc.edu).
-    [em_llm_passkey_10m_mistral]="48:00:00 16 120gb 4"
+    [em_llm_longbench_mistral]="26:00:00 4 128gb 1"
+    [em_llm_longbench_llama3]="26:00:00 4 128gb 1"
+    [em_llm_longbench_llama31_sm]="26:00:00 4 128gb 1"
+    [em_llm_longbench_llama31_s]="26:00:00 4 128gb 1"
+    [em_llm_longbench_phi3_mini]="26:00:00 4 128gb 1"
+    [em_llm_longbench_phi35_mini]="26:00:00 4 128gb 1"
+    [em_llm_infinitebench_mistral]="26:00:00 4 200gb 1"
+    [em_llm_infinitebench_llama3]="26:00:00 4 200gb 1"
+    [em_llm_infinitebench_llama31_sm]="26:00:00 4 200gb 1"
+    [em_llm_infinitebench_llama31_s]="26:00:00 4 200gb 1"
+    [em_llm_passkey_1m_mistral]="26:00:00 4 200gb 1"
+    # passkey_10m needs 4 GPUs and 512gb; do NOT include unattended.
+    # Submit separately once allocated extra resources (contact hpc@asc.edu).
+    [em_llm_passkey_10m_mistral]="48:00:00 16 512gb 4"
 )
 
 DRY=""
