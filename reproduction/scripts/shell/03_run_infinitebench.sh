@@ -12,6 +12,9 @@
 #   EXTRA_OVERRIDES        extra OmegaConf CLI args appended verbatim. On the
 #                          local backend with 32 GB RAM, expect to set this to
 #                          "model.min_free_cpu_memory=8 model.disk_offload_threshold=200000"
+#   SKIP_SCORING           1 to skip eval.py + make_summary.py at the end.
+#                            Use when submitting per-task jobs and scoring
+#                            separately via score_run.sh after all tasks land.
 
 set -euo pipefail
 
@@ -22,6 +25,7 @@ MODEL="${MODEL:-mistral}"
 DATASETS="${DATASETS:-code_debug,math_find,kv_retrieval,passkey,number_string,longbook_choice_eng}"
 ALLOW_DISK_OFFLOAD="${ALLOW_DISK_OFFLOAD:-True}"
 EXTRA_OVERRIDES="${EXTRA_OVERRIDES:-}"
+SKIP_SCORING="${SKIP_SCORING:-0}"
 
 # shellcheck disable=SC1091
 source "$REPRO_ROOT/reproduction/scripts/shell/_paper_variants.sh"
@@ -47,10 +51,15 @@ python benchmark/pred.py \
     ${MODEL_GAMMA_OVERRIDE} \
     ${EXTRA_OVERRIDES}
 
-python benchmark/eval.py --dir_path "$OUT_DIR"
+if [[ "$SKIP_SCORING" == "1" ]]; then
+    echo "[infinitebench] SKIP_SCORING=1: skipping eval.py and make_summary.py."
+    echo "[infinitebench] Run score_run.sh after all per-task jobs finish."
+else
+    python benchmark/eval.py --dir_path "$OUT_DIR"
 
-python "$REPRO_ROOT/reproduction/analysis/make_summary.py" "$OUT_DIR" \
-    || echo "[summary] warning: summary generation failed; result.json is still valid"
+    python "$REPRO_ROOT/reproduction/analysis/make_summary.py" "$OUT_DIR" \
+        || echo "[summary] warning: summary generation failed; result.json is still valid"
 
-echo "[infinitebench] Done. Results: $OUT_DIR/result.json"
-echo "[infinitebench] Side-by-side: $OUT_DIR/summary.md"
+    echo "[infinitebench] Done. Results: $OUT_DIR/result.json"
+    echo "[infinitebench] Side-by-side: $OUT_DIR/summary.md"
+fi

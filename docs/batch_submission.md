@@ -114,6 +114,89 @@ cat ~/repro-track/reproduction/results/asax/longbench/mistral_sm_c/summary.md
 Each finished run will have a `result.json` and `summary.md` in
 `reproduction/results/asax/<benchmark>/<model>_<variant>/`.
 
+## Per-task submission (--per-task)
+
+### When to use it
+
+Use `--per-task` for multi-task benchmarks where total walltime is uncertain
+or you want parallelism across GPU slots. Instead of one PBS job running all
+tasks in a serial loop, each task gets its own job that lives or dies
+independently.
+
+The motivating incident: job **50131** (`em_llm_infinitebench_mistral`,
+submitted 2026-05-24, 26h walltime) was PBS-killed after completing only
+`code_debug` — the first of 6 IB tasks. The remaining 5 tasks never ran.
+Memory efficiency was 71% (healthy), so this was a pure walltime failure.
+With per-task submission, `code_debug` would have freed its GPU slot hours
+earlier, and the other 5 tasks could have been scheduled in parallel.
+
+**Not supported** for passkey wrappers (`em_llm_passkey_1m_*`,
+`em_llm_passkey_10m_*`). Passkey runs are single-sample-per-length: there is
+no meaningful "task" boundary to split on. Submit passkey wrappers normally.
+
+### How it works
+
+`--per-task` passes `DATASETS=<task>,SKIP_SCORING=1` to each job via
+`qsub -v` (not shell export — PBS env-var inheritance is unreliable).
+`SKIP_SCORING=1` tells the shell runner to stop after `pred.py` and skip
+`eval.py`/`make_summary.py`. All per-task jobs share the same output
+directory (`$RESULTS_ROOT/<bench>/<model>_<variant>/`) so their `.jsonl`
+files accumulate alongside each other. Once all tasks have landed, run
+`score_run.sh` once to score the full set.
+
+Per-task resource defaults (note: these are per single-task budgets, lower
+than the all-tasks defaults):
+
+| Benchmark | Default walltime | Known-long tasks | Override walltime |
+|---|---:|---|---:|
+| LongBench | 12h | — | — |
+| InfiniteBench | 30h | `kv_retrieval`, `longbook_choice_eng` | 36h each |
+
+The two IB tasks get extra walltime because `kv_retrieval` (Retrieve.KV in
+`further_results.md`) and `longbook_choice_eng` (En.MC) operate on the
+longest token sequences in the benchmark.
+
+### Example: resubmit IB Mistral per-task
+
+```bash
+cd ~/repro-track
+
+# Dry-run first to confirm the 6 qsub lines look right:
+bash reproduction/scripts/asax/batch/submit_batch.sh \
+    --dry-run --per-task em_llm_infinitebench_mistral
+
+# If it looks right, submit for real:
+bash reproduction/scripts/asax/batch/submit_batch.sh \
+    --per-task em_llm_infinitebench_mistral
+```
+
+This fires 6 jobs. Monitor with:
+```bash
+qstat -u $USER
+```
+
+### Score after all tasks land
+
+Once every `em_llm_infinitebench_mistral__<task>` job shows `C` (complete)
+in `qstat`:
+
+```bash
+cd ~/repro-track
+bash reproduction/scripts/asax/batch/score_run.sh em_llm_infinitebench_mistral
+```
+
+Same pattern for LongBench:
+```bash
+bash reproduction/scripts/asax/batch/submit_batch.sh \
+    --per-task em_llm_longbench_mistral
+# ... wait for all 15 per-task jobs ...
+bash reproduction/scripts/asax/batch/score_run.sh em_llm_longbench_mistral
+```
+
+`score_run.sh` runs on the login node (no `qsub`). It reads the accumulated
+`.jsonl` files in the shared output dir and produces `result.json` +
+`summary.md` exactly as the all-tasks path does.
+
 ## If a job fails
 
 PBS writes the captured stdout/stderr to `<jobname>.o<jobid>` in the

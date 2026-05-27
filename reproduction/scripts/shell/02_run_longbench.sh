@@ -15,6 +15,9 @@
 #   ALLOW_DISK_OFFLOAD     True|False; default False (LongBench fits without)
 #   EXTRA_OVERRIDES        extra OmegaConf CLI args; appended AFTER the
 #                            paper-variant overrides (so user wins)
+#   SKIP_SCORING           1 to skip eval.py + make_summary.py at the end.
+#                            Use when submitting per-task jobs and scoring
+#                            separately via score_run.sh after all tasks land.
 #
 # Pre-req: source reproduction/scripts/env/<system>.env then
 #          conda activate emllm.
@@ -28,6 +31,7 @@ MODEL="${MODEL:-mistral}"
 DATASETS="${DATASETS:-2wikimqa,gov_report,hotpotqa,lcc,multi_news,multifieldqa_en,musique,narrativeqa,passage_retrieval_en,qasper,qmsum,repobench-p,samsum,trec,triviaqa}"
 ALLOW_DISK_OFFLOAD="${ALLOW_DISK_OFFLOAD:-False}"
 EXTRA_OVERRIDES="${EXTRA_OVERRIDES:-}"
+SKIP_SCORING="${SKIP_SCORING:-0}"
 
 # Resolve paper-faithful variant overrides (sets VARIANT, VARIANT_OVERRIDES,
 # MODEL_GAMMA_OVERRIDE). Pass through any user-supplied VARIANT.
@@ -58,11 +62,16 @@ python benchmark/pred.py \
     ${MODEL_GAMMA_OVERRIDE} \
     ${EXTRA_OVERRIDES}
 
-python benchmark/eval.py --dir_path "$OUT_DIR"
+if [[ "$SKIP_SCORING" == "1" ]]; then
+    echo "[longbench] SKIP_SCORING=1: skipping eval.py and make_summary.py."
+    echo "[longbench] Run score_run.sh after all per-task jobs finish."
+else
+    python benchmark/eval.py --dir_path "$OUT_DIR"
 
-# Paper-mirroring side-by-side summary (soft-fail to never block the run).
-python "$REPRO_ROOT/reproduction/analysis/make_summary.py" "$OUT_DIR" \
-    || echo "[summary] warning: summary generation failed; result.json is still valid"
+    # Paper-mirroring side-by-side summary (soft-fail to never block the run).
+    python "$REPRO_ROOT/reproduction/analysis/make_summary.py" "$OUT_DIR" \
+        || echo "[summary] warning: summary generation failed; result.json is still valid"
 
-echo "[longbench] Done. Results: $OUT_DIR/result.json"
-echo "[longbench] Side-by-side: $OUT_DIR/summary.md"
+    echo "[longbench] Done. Results: $OUT_DIR/result.json"
+    echo "[longbench] Side-by-side: $OUT_DIR/summary.md"
+fi
