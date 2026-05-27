@@ -81,7 +81,27 @@ echo "=== python now: $(which python) ==="
 # sees every GPU on the node. Cap to one device so pred.py takes the
 # single-GPU branch. Override on the run_gpu line / .job_config for
 # multi-GPU jobs (e.g., CUDA_VISIBLE_DEVICES=0,1,2,3 for passkey 10M).
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+#
+# When CUDA_VISIBLE_DEVICES is unset, pick the GPU with the most free
+# memory at job start instead of hard-coding GPU 0. Reason: on shared-
+# visibility nodes GPU 0 is sometimes already heavily used by another
+# tenant, which caused model-load OOMs (e.g., job 50132 on 2026-05-25
+# died with "CUDA out of memory" trying to allocate 112 MiB while loading
+# the first Mistral-7B shard). Fall back to GPU 0 if nvidia-smi isn't
+# available or returns nothing.
+if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+    GPU_IDX=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | \
+        awk 'BEGIN{best=-1; ans=""} {v=$1+0; if (v > best) {best=v; ans=NR-1}} END{print ans}')
+    if [[ -z "$GPU_IDX" || ! "$GPU_IDX" =~ ^[0-9]+$ ]]; then
+        echo "=== nvidia-smi unavailable or no GPUs visible; falling back to GPU 0 ==="
+        GPU_IDX=0
+    fi
+    export CUDA_VISIBLE_DEVICES="$GPU_IDX"
+fi
+
 echo "=== CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES ==="
+nvidia-smi --query-gpu=index,name,memory.free,memory.used,memory.total \
+    --format=csv,noheader 2>/dev/null \
+    || echo "=== nvidia-smi diagnostic unavailable ==="
 
 echo "=== preamble complete; ready to dispatch ==="
