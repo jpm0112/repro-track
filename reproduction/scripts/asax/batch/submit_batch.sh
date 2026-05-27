@@ -136,7 +136,10 @@ fi
 emit_qsub() {
     local walltime="$1" ncpus="$2" mem="$3" ngpus="$4"
     local jobname="$5" script="$6" extra_v="$7"
-    local select_str="select=1:ngpus=${ngpus}:ncpus=${ncpus}:mpiprocs=${ncpus}:mem=${mem%gb}000mb"
+    # Pin to H100 ("hopper" family) for cross-run reproducibility. ASAX also
+    # offers ampere (A100); use :gpuname=ampere to switch back. More specific
+    # selectors available: gputype={hopper80,hopper94,ampere80}.
+    local select_str="select=1:ngpus=${ngpus}:ncpus=${ncpus}:mpiprocs=${ncpus}:mem=${mem%gb}000mb:gpuname=hopper"
 
     if [[ -n "$extra_v" ]]; then
         $DRY qsub -q gpu -j oe -N "$jobname" -r n -M "$EMAIL" \
