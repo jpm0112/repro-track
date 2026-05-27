@@ -84,13 +84,15 @@ IB_TASKS="code_debug math_find kv_retrieval passkey number_string longbook_choic
 # Format: walltime ncpus mem gpus  (same as RESOURCES values)
 # LongBench default: 12h (single task is much faster than the full 26h run).
 LB_TASK_DEFAULT="12:00:00 4 120gb 1"
-# InfiniteBench default: 30h per task (most IB tasks are long-context-heavy).
-IB_TASK_DEFAULT="30:00:00 4 120gb 1"
+# InfiniteBench default: 60h per task (most IB tasks are long-context-heavy).
+# Bumped from 30h on 2026-05-27 after job 50131 showed code_debug alone
+# consuming ~26h of the all-tasks 26h budget; 60h gives ~2x headroom.
+IB_TASK_DEFAULT="60:00:00 4 120gb 1"
 # Per-task IB overrides: kv_retrieval and longbook_choice_eng involve the
 # longest token sequences and have historically needed extra wall time.
 declare -A IB_TASK_OVERRIDES=(
-    [kv_retrieval]="36:00:00 4 120gb 1"
-    [longbook_choice_eng]="36:00:00 4 120gb 1"
+    [kv_retrieval]="96:00:00 4 120gb 1"
+    [longbook_choice_eng]="96:00:00 4 120gb 1"
 )
 
 # ---------------------------------------------------------------------------
